@@ -57,10 +57,11 @@ data class TouchpadState(
     val touchMode: TouchMode = TouchMode.IDLE,
     // Seconds of no input before MainActivity scrims the touchpad UI. 0 = never dim.
     val dimDelaySec: Int = DEFAULT_DIM_DELAY_SEC,
+    val blackTouchpad: Boolean = false,
     // User preference: show the keyboard on the phone (IME fallback policy) instead of
     // on the glasses. dexKeyboardActive reflects whether the policy actually took effect
     // (false when `wm set-display-ime-policy` is unsupported on this build).
-    val dexKeyboardEnabled: Boolean = true,
+    val dexKeyboardEnabled: Boolean = false,
     val dexKeyboardActive: Boolean = false,
 ) {
     val externalDisplayConnected get() = targetDisplay != null
@@ -78,7 +79,8 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         naturalScroll = prefs.getBoolean("natural_scroll", true),
         axisRotation = AxisRotation.fromDegrees(prefs.getInt("axis_rotation_degrees", 0)),
         dimDelaySec = prefs.getInt("dim_delay_sec", DEFAULT_DIM_DELAY_SEC),
-        dexKeyboardEnabled = prefs.getBoolean("dex_keyboard", true),
+        blackTouchpad = prefs.getBoolean("black_touchpad", false),
+        dexKeyboardEnabled = prefs.getBoolean("dex_keyboard", false),
     ))
     val state: StateFlow<TouchpadState> = _state.asStateFlow()
 
@@ -290,7 +292,13 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(dexKeyboardEnabled = v) }
         _state.value.targetDisplay?.let { applyImePolicy(it.id) }
     }
+    fun setBlackTouchpad(enabled: Boolean) {
+        prefs.edit().putBoolean("black_touchpad", enabled).apply()
+        _state.update { it.copy(blackTouchpad = enabled) }
+    }
     fun toggleSettings() = _state.update { it.copy(showSettings = !it.showSettings) }
+    fun openSettings() = _state.update { it.copy(showSettings = true) }
+    fun closeSettings() = _state.update { it.copy(showSettings = false) }
 
     // Cleans up the display listener and mouse service when the
     // ViewModel is destroyed (e.g. app process ends or activity is permanently finished).

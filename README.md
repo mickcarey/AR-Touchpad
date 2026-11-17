@@ -2,8 +2,29 @@
 
 Turn an Android phone into a trackpad for an external display running Android desktop mode. The app was developed with Viture XR glasses, but should work with other displays that support Android's extended desktop.
 
+This is a fork of the original AR Touchpad project.
+
 ## Features
 
+- The touchpad fills the entire phone screen, including the space previously used by
+  the title and navigation buttons. Android's system bars are hidden until a system swipe.
+- Swipe across most of either the phone's **top or bottom edge in portrait** to open
+  settings on the external display. Start just inside the edge and travel about
+  **two-thirds of the phone's width**, left-to-right or right-to-left, then lift.
+  The gesture uses the same physical edges regardless of the cursor-rotation setting.
+- The phone remains a touchpad while settings are open on the glasses. Click **Done**
+  there to close them. If an external settings window is unavailable, settings open
+  on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
+- Settings open in a centred Material-style window, with two columns on wide displays,
+  a single column on the phone, and the title aligned with the info and **Done** buttons.
+  Changes save immediately, without a save button or status message.
+  The dark ink, teal and amber palette is adapted from [Vanilla8](https://vanilla8.com/).
+- The info button opens **Information**, with the gesture guide first, display details
+  below it, and the fork attribution at the end of the scrolling content.
+- **Settings → Black touchpad** keeps the phone surface pure black, including during
+  touch input. The phone stays awake, with cursor gestures and the settings edge swipe active.
+  External-display brightness is unaffected. Phone-side setup/settings remain visible if
+  the external display or mouse connection is unavailable.
 - Move the external display's cursor with one finger; tap to click.
 - Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
@@ -11,8 +32,11 @@ Turn an Android phone into a trackpad for an external display running Android de
   its mouse capture back to Android. This sends Moonlight's Ctrl+Alt+Shift+Z shortcut;
   repeat while Moonlight is focused to recapture. The stream stays open.
 - Use the phone as a keyboard for text fields on the external display.
+- The popup keyboard stays on the external display by default so you can click its
+  keys with the cursor. Choose **Settings → Popup keyboard → External display** to keep
+  the phone available as a fullscreen touchpad, or choose **Phone** to type there instead.
 - Keep menus open while moving the pointer from the phone's touchpad.
-- In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
+- In **Settings → Phone orientation**, rotate cursor movement and two-finger scrolling by
   45° or 90° clockwise or counterclockwise. The default is 0°, and your choice is saved.
   For example, at 90° clockwise, swiping right moves the cursor down.
 
@@ -42,6 +66,47 @@ Requires Android Studio with the Android SDK and NDK installed.
 ```bash
 ./gradlew assembleDebug
 ```
+
+On Windows PowerShell, use `.\gradlew.bat assembleDebug` (JDK 17 recommended).
+
+To run the local unit tests and Android lint:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug
+```
+
+Unit tests cover cursor rotation, multi-finger gesture recognition, and the settings
+edge swipe. Check external-display settings, the popup keyboard, and touchpad behaviour
+on a connected device as well.
+
+## Wireless installation from the CLI (Windows)
+
+Keep the PC and phone on the same Wi-Fi. On the phone enable **Developer options →
+Wireless debugging**, then open **Pair device with pairing code**.
+
+```powershell
+# Use the pairing dialog's IP:port. adb prompts for its six-digit code.
+adb pair 192.168.1.10:37123
+
+# Close that dialog. Use the DIFFERENT IP:port on the main Wireless debugging page.
+.\scripts\install-wireless.ps1 -Address 192.168.1.10:40001 -Launch
+
+# Subsequent builds, when exactly one wireless device is connected:
+.\scripts\install-wireless.ps1 -Launch
+```
+
+Alternatively, pass `-PairAddress IP:PAIR_PORT -Address IP:CONNECT_PORT` to the script
+to pair and install in one invocation. It finds `adb` on PATH or in the Android SDK,
+builds the debug APK, and installs with `adb install -r` to retain app data. It never
+automatically uninstalls an existing app. Use `-SkipBuild` to install the last build,
+or `-Serial` to select among multiple connected wireless devices.
+
+If discovery fails, run `adb mdns services` and `adb devices -l`, then reconnect with
+`-Address` using the phone's current connection port (it can change). A pairing port
+is not an installation port. If installation reports a signing mismatch, use a build
+signed with the existing app's key; uninstalling would erase its data.
+
+See Android's [wireless ADB documentation](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi).
 
 ## License
 

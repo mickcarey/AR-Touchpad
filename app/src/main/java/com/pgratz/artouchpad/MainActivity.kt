@@ -17,6 +17,8 @@ package com.pgratz.artouchpad
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.hardware.display.DisplayManager
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -28,10 +30,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -63,6 +69,8 @@ class MainActivity : ComponentActivity() {
     private val idleHandler = Handler(Looper.getMainLooper())
     private var isDimmed by mutableStateOf(false)
     private var pointerDown = false
+    private var settingsPresentation: SettingsPresentation? = null
+    private var settingsOnPhone by mutableStateOf(false)
 
     // FLAG_KEEP_SCREEN_ON only covers the phone's own display; this covers the glasses.
     private val glassesWakeLock by lazy { DisplayWakeLock(applicationContext) }
@@ -88,23 +96,31 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        updateSystemBars()
         // Applies only while this window is in front, so the phone resumes its normal
         // timeout as soon as the touchpad is backgrounded.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // A trackpad is an input peripheral, not the keyboard-focus target. Otherwise
         // touching the phone takes focus from the external app and dismisses its menus
-        // before our gesture recognizer even sees movement. Keep setup/settings normally
-        // focusable, and restore normal behavior when the display or mouse disconnects.
+        // before our gesture recognizer even sees movement. Only phone-side setup/settings
+        // need focus; an external settings window leaves the phone acting as a touchpad.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state.map {
-                    it.mouseReady && it.externalDisplayConnected && !it.showSettings
-                }.distinctUntilChanged().collect { trackpadActive ->
+                    Triple(it.mouseReady, it.targetDisplay?.id, it.showSettings)
+                }.distinctUntilChanged().collect { (mouseReady, displayId, showSettings) ->
+                    if (!showSettings || !mouseReady) dismissSettingsPresentation()
+                    settingsOnPhone = showSettings && (!mouseReady || !showSettingsOnDisplay(displayId))
+                    val trackpadActive = mouseReady && displayId != null && !settingsOnPhone
                     val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
                     // ALT_FOCUSABLE_IM keeps this non-focusable window below the phone
                     // keyboard when the external display uses the fallback IME policy.
                     window.setFlags(if (trackpadActive) flags else 0, flags)
+                    updateSystemBars()
                 }
             }
         }
@@ -132,22 +148,72 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
+            val state by viewModel.state.collectAsState()
             ARTouchpadTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TouchpadScreen(viewModel = viewModel)
-                    if (isDimmed) {
+                    TouchpadScreen(viewModel = viewModel, settingsOnPhone = settingsOnPhone)
+                    // A draw-only black surface keeps the digitizer and gestures active.
+                    // Phone-side recovery/settings must remain visible when disconnected.
+                    val blackPad = state.blackTouchpad && state.mouseReady &&
+                        state.externalDisplayConnected && !settingsOnPhone
+                    if (isDimmed || blackPad) {
                         // Draw-only overlay: no pointerInput modifier, so touches fall
                         // straight through to the touchpad surface underneath and the
                         // gesture that wakes the screen still counts as a gesture.
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = DIM_ALPHA)),
+                                .background(Color.Black.copy(alpha = if (blackPad) 1f else DIM_ALPHA)),
                         )
                     }
                 }
             }
         }
+    }
+
+    private fun updateSystemBars() {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (settingsOnPhone) show(WindowInsetsCompat.Type.systemBars())
+            else hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun showSettingsOnDisplay(displayId: Int?): Boolean {
+        if (displayId == null) { dismissSettingsPresentation(); return false }
+        settingsPresentation?.let { if (it.display.displayId == displayId && it.isShowing) return true }
+        dismissSettingsPresentation()
+        val display = getSystemService(DisplayManager::class.java).getDisplay(displayId) ?: return false
+        var presentation: SettingsPresentation? = null
+        return try {
+            val newPresentation = SettingsPresentation(this, display, viewModel)
+            presentation = newPresentation
+            newPresentation.setOnDismissListener {
+                if (settingsPresentation === newPresentation) {
+                    settingsPresentation = null
+                    viewModel.closeSettings()
+                }
+            }
+            newPresentation.show()
+            settingsPresentation = newPresentation
+            true
+        } catch (e: RuntimeException) {
+            Log.w("MainActivity", "External settings unavailable; showing settings on phone", e)
+            presentation?.setOnDismissListener(null)
+            presentation?.dismiss()
+            false
+        }
+    }
+
+    private fun dismissSettingsPresentation() {
+        settingsPresentation?.setOnDismissListener(null)
+        settingsPresentation?.dismiss()
+        settingsPresentation = null
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) updateSystemBars()
     }
 
     // Every touch — including ACTION_MOVE — counts as activity, so a long continuous drag
@@ -162,6 +228,9 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    // Public Window.Callback override; Core's implementation carries a library-only
+    // annotation, but forwarding this framework callback must still call super.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         noteInteraction()
         return super.dispatchKeyEvent(event)
@@ -187,6 +256,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         viewModel.refresh()
         noteInteraction()
+        updateSystemBars()
     }
 
     // Drops the scrim and the pending dim so the touchpad never comes back to the
@@ -196,5 +266,16 @@ class MainActivity : ComponentActivity() {
         idleHandler.removeCallbacks(dimRunnable)
         isDimmed = false
         pointerDown = false
+    }
+
+    override fun onStop() {
+        dismissSettingsPresentation()
+        viewModel.closeSettings()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        dismissSettingsPresentation()
+        super.onDestroy()
     }
 }

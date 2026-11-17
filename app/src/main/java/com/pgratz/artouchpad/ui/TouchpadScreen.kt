@@ -14,33 +14,23 @@
 
 package com.pgratz.artouchpad.ui
 
-import android.view.KeyEvent as AKeyEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
-import com.pgratz.artouchpad.AxisRotation
-import com.pgratz.artouchpad.DisplayInfo
 import com.pgratz.artouchpad.MultiFingerTapTracker
+import com.pgratz.artouchpad.SettingsEdgeSwipe
 import com.pgratz.artouchpad.TouchMode
 import com.pgratz.artouchpad.TouchpadViewModel
 import kotlin.math.abs
@@ -59,8 +49,6 @@ private val ACCENT = Color(0xFF4FC3F7)
 private val ACCENT_DIM = Color(0xFF1A4A6A)
 private val TEXT = Color(0xFFE0E0E0)
 private val TEXT_DIM = Color(0xFF90A4AE)
-private val TEXT_MUTED = Color(0xFF546E7A)
-private val NAV_ICON = Color(0xFFB0BEC5)
 
 private const val MOVE_THRESHOLD = 5f
 // Combined travel (px) two fingers must cover before the gesture is latched as scroll or pinch.
@@ -69,143 +57,59 @@ private const val TAP_MAX_MS = 220L
 private const val LONG_PRESS_MS = 600L
 private const val DOUBLE_TAP_WINDOW_MS = 300L
 
-// Root composable. Collects ViewModel state and renders either SettingsPanel (when
-// showSettings is true) or the main layout: StatusBar → TouchpadSurface → NavigationBar.
+// The phone is entirely touchpad. Settings normally live on the external display.
 @Composable
-fun TouchpadScreen(viewModel: TouchpadViewModel) {
+fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = false) {
     val state by viewModel.state.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BG)
-            .systemBarsPadding(),
-    ) {
-        StatusBar(
-            shizukuAvailable = state.shizukuAvailable,
-            shizukuPermission = state.shizukuPermission,
-            mouseReady = state.mouseReady,
-            targetDisplay = state.targetDisplay,
-            touchMode = state.touchMode,
-            onSettingsClick = viewModel::toggleSettings,
-            onGrantShizuku = viewModel::requestShizukuPermission,
-            onConnectMouse = { viewModel.mouse.bind() },
-        )
-
-        if (state.showSettings) {
-            SettingsPanel(
-                sensitivity = state.sensitivity,
-                scrollSpeed = state.scrollSpeed,
-                naturalScroll = state.naturalScroll,
-                axisRotation = state.axisRotation,
-                dimDelaySec = state.dimDelaySec,
-                dexKeyboard = state.dexKeyboardEnabled,
-                dexKeyboardActive = state.dexKeyboardActive,
-                allDisplays = state.allDisplays,
-                targetDisplay = state.targetDisplay,
-                onSensitivity = viewModel::setSensitivity,
-                onScrollSpeed = viewModel::setScrollSpeed,
-                onNaturalScroll = viewModel::setNaturalScroll,
-                onAxisRotation = viewModel::setAxisRotation,
-                onDimDelay = viewModel::setDimDelay,
-                onDexKeyboard = viewModel::setDexKeyboard,
-                onDismiss = viewModel::toggleSettings,
-            )
-        } else {
-            TouchpadSurface(
-                modifier = Modifier.weight(1f),
-                enabled = state.mouseReady,
-                onMoveCursor = viewModel::moveCursor,
-                onClick = { viewModel.performClick() },
-                onDoubleClick = { viewModel.performDoubleClick() },
-                onRightClick = { viewModel.performRightClick() },
-                onThreeFingerTap = viewModel::toggleMoonlightCapture,
-                onScroll = viewModel::performScroll,
-                onPinch = viewModel::pinchZoom,
-                onTouchModeChanged = viewModel::setTouchMode,
-                onSelectStart = viewModel::startSelectDrag,
-                onSelectEnd = viewModel::endSelectDrag,
-            )
-            NavigationBar(
-                onBack    = { viewModel.pressKey(AKeyEvent.KEYCODE_BACK) },
-                onHome    = { viewModel.pressKey(AKeyEvent.KEYCODE_HOME) },
-                onRecents = { viewModel.pressKey(AKeyEvent.KEYCODE_APP_SWITCH) },
-            )
+    if (state.showSettings && settingsOnPhone) {
+        Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel) }
+    } else {
+        Box(Modifier.fillMaxSize().background(BG)) {
+            TouchpadSurface(Modifier.fillMaxSize(), state.mouseReady,
+                viewModel::moveCursor, viewModel::performClick, viewModel::performDoubleClick,
+                viewModel::performRightClick, viewModel::toggleMoonlightCapture,
+                viewModel::performScroll, viewModel::pinchZoom, viewModel::setTouchMode,
+                viewModel::startSelectDrag, viewModel::endSelectDrag, viewModel::openSettings)
+            if (!state.mouseReady) Column(
+                Modifier.align(Alignment.Center).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Touchpad disconnected", color = TEXT, fontSize = 18.sp)
+                ConnectionControls(viewModel)
+                TextButton(onClick = viewModel::openSettings) { Text("Settings", color = ACCENT) }
+            }
         }
     }
 }
 
-// Top status bar showing the app title, two status dots (Mouse/Display),
-// the current touch mode indicator, and contextual action buttons for each
-// unmet setup step (grant Shizuku → connect mouse).
 @Composable
-private fun StatusBar(
-    shizukuAvailable: Boolean,
-    shizukuPermission: Boolean,
-    mouseReady: Boolean,
-    targetDisplay: DisplayInfo?,
-    touchMode: TouchMode,
-    onSettingsClick: () -> Unit,
-    onGrantShizuku: () -> Unit,
-    onConnectMouse: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("AR Touchpad", color = TEXT, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatusDot(mouseReady, "Mouse")
-                    StatusDot(targetDisplay != null, "Display")
-                    val modeLabel = when (touchMode) {
-                        TouchMode.SCROLL -> "↕ scroll"
-                        TouchMode.SELECT -> "⊹ select"
-                        TouchMode.CURSOR -> "⊹ cursor"
-                        TouchMode.IDLE   -> null
-                    }
-                    modeLabel?.let { Text(it, color = ACCENT, fontSize = 11.sp) }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    !shizukuAvailable ->
-                        Text("Shizuku off", color = Color(0xFFFF7043), fontSize = 11.sp)
-                    !shizukuPermission ->
-                        TextButton(onClick = onGrantShizuku, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("Grant Shizuku", color = Color(0xFFFF7043), fontSize = 12.sp)
-                        }
-                    !mouseReady ->
-                        TextButton(onClick = onConnectMouse, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("Connect", color = Color(0xFFFFB300), fontSize = 12.sp)
-                        }
-                }
-                IconButton(onClick = onSettingsClick) {
-                    Text("⚙", color = TEXT_DIM, fontSize = 22.sp)
-                }
-            }
-        }
-
-        HorizontalDivider(color = Color(0xFF1E2A38), thickness = 1.dp)
+fun TouchpadSettings(viewModel: TouchpadViewModel) {
+    val state by viewModel.state.collectAsState()
+    Box(Modifier.fillMaxSize()) {
+        SettingsPanel(
+            sensitivity = state.sensitivity, scrollSpeed = state.scrollSpeed,
+            naturalScroll = state.naturalScroll, axisRotation = state.axisRotation,
+            dimDelaySec = state.dimDelaySec, dexKeyboard = state.dexKeyboardEnabled,
+            blackTouchpad = state.blackTouchpad, onBlackTouchpad = viewModel::setBlackTouchpad,
+            dexKeyboardActive = state.dexKeyboardActive, allDisplays = state.allDisplays,
+            targetDisplay = state.targetDisplay, onSensitivity = viewModel::setSensitivity,
+            onScrollSpeed = viewModel::setScrollSpeed, onNaturalScroll = viewModel::setNaturalScroll,
+            onAxisRotation = viewModel::setAxisRotation, onDimDelay = viewModel::setDimDelay,
+            onDexKeyboard = viewModel::setDexKeyboard, onDismiss = viewModel::closeSettings,
+            connectionControls = { ConnectionControls(viewModel) },
+        )
     }
 }
 
-// Small colored circle (green = active, gray = inactive) followed by a text label.
-// Used in StatusBar to show Mouse/Display readiness at a glance.
 @Composable
-private fun StatusDot(active: Boolean, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(if (active) Color(0xFF4CAF50) else Color(0xFF424242))
-        )
-        Text(label, color = TEXT_MUTED, fontSize = 11.sp)
+private fun ConnectionControls(viewModel: TouchpadViewModel) {
+    val state by viewModel.state.collectAsState()
+    when {
+        !state.shizukuAvailable -> Text("Start Shizuku to connect the mouse.", color = TEXT_DIM)
+        !state.shizukuPermission -> TextButton(onClick = viewModel::requestShizukuPermission) {
+            Text("Grant Shizuku", color = ACCENT)
+        }
+        !state.mouseReady -> TextButton(onClick = { viewModel.mouse.bind() }) { Text("Connect mouse", color = ACCENT) }
     }
 }
 
@@ -232,21 +136,20 @@ private fun TouchpadSurface(
     onTouchModeChanged: (TouchMode) -> Unit,
     onSelectStart: () -> Unit,
     onSelectEnd: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var touchPoints by remember { mutableStateOf(listOf<Offset>()) }
     val haptic = LocalHapticFeedback.current
 
     Box(
-        modifier = modifier.padding(12.dp),
+        modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(20.dp))
                 .background(if (enabled) SURFACE else SURFACE_DISABLED)
                 .pointerInput(enabled) {
-                    if (!enabled) return@pointerInput
 
                     var lastPositions = mapOf<PointerId, Offset>()
                     var downPosition = Offset.Zero
@@ -261,6 +164,7 @@ private fun TouchpadSurface(
                     var pendingDy = 0f
                     var pendingSpan = 0f
                     val multiTap = MultiFingerTapTracker(TWO_FINGER_SLOP, TAP_MAX_MS)
+                    val edgeSwipe = SettingsEdgeSwipe(56.dp.toPx(), 72.dp.toPx(), 36.dp.toPx())
 
                     coroutineScope {
                         val scope = this  // CoroutineScope for launching the long-press timer
@@ -272,6 +176,47 @@ private fun TouchpadSurface(
                                 val pressed = event.changes.filter { it.pressed }
                                 val justPressed = event.changes.filter { it.pressed && !it.previousPressed }
                                 val justReleased = event.changes.filter { !it.pressed && it.previousPressed }
+
+                                val firstDown = justPressed.isNotEmpty() && event.changes.none { it.previousPressed }
+                                val previousEdgeDecision = edgeSwipe.decision
+                                if (firstDown) {
+                                    val p = justPressed.first().position
+                                    edgeSwipe.begin(p.x, p.y, size.width.toFloat(), size.height.toFloat(), now)
+                                }
+                                val firstPoint = event.changes.first().position
+                                val edgeDecision = edgeSwipe.update(firstPoint.x, firstPoint.y, now,
+                                    max(pressed.size, event.changes.count { it.previousPressed }), pressed.isEmpty())
+                                if (edgeDecision == SettingsEdgeSwipe.Decision.CONSUMED ||
+                                    edgeDecision == SettingsEdgeSwipe.Decision.OPEN_SETTINGS) {
+                                    longPressJob?.cancel()
+                                    multiTap.cancelTap()
+                                    lastTapTime = 0L
+                                    didMove = true
+                                    touchPoints = emptyList()
+                                    lastPositions = emptyMap()
+                                    onTouchModeChanged(TouchMode.IDLE)
+                                    event.changes.forEach { it.consume() }
+                                    if (edgeDecision == SettingsEdgeSwipe.Decision.OPEN_SETTINGS) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onOpenSettings()
+                                    }
+                                    continue
+                                }
+                                if (!enabled) { event.changes.forEach { it.consume() }; continue }
+
+                                // Rejected edge candidates return their buffered travel to the mouse.
+                                // Taps and stationary long-presses keep their existing timing.
+                                if (!firstDown && previousEdgeDecision == SettingsEdgeSwipe.Decision.PENDING &&
+                                    edgeDecision == SettingsEdgeSwipe.Decision.TRACKPAD && event.changes.size == 1) {
+                                    if (pressed.isNotEmpty()) lastPositions = mapOf(pressed.first().id to downPosition)
+                                    else {
+                                        val delta = firstPoint - downPosition
+                                        if (abs(delta.x) > MOVE_THRESHOLD || abs(delta.y) > MOVE_THRESHOLD) {
+                                            didMove = true
+                                            onMoveCursor(delta.x, delta.y)
+                                        }
+                                    }
+                                }
 
                                 touchPoints = pressed.map { it.position }
                                 val tapFingers = multiTap.update(now, event.changes.map {
@@ -306,7 +251,13 @@ private fun TouchpadSurface(
 
                                 // Do not turn trailing fingers into cursor movement/scroll, or
                                 // a three-finger gesture into a two-finger action during release.
-                                val suppressMotion = multiTap.maxFingers >= 3 ||
+                                if (edgeDecision == SettingsEdgeSwipe.Decision.PENDING &&
+                                    (abs(firstPoint.x - downPosition.x) > MOVE_THRESHOLD ||
+                                        abs(firstPoint.y - downPosition.y) > MOVE_THRESHOLD)) {
+                                    didMove = true
+                                    longPressJob?.cancel()
+                                }
+                                val suppressMotion = edgeDecision == SettingsEdgeSwipe.Decision.PENDING || multiTap.maxFingers >= 3 ||
                                     (multiTap.maxFingers >= 2 && multiTap.releasing)
                                 if (suppressMotion) {
                                     lastPositions = pressed.associate { it.id to it.position }
@@ -475,310 +426,5 @@ private fun TouchpadSurface(
             }
         }
 
-        // Disabled overlay text (outside Canvas, inside Box)
-        if (!enabled) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Touchpad Disabled", color = TEXT_MUTED, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Grant Shizuku permission to activate", color = Color(0xFF37474F), fontSize = 14.sp)
-            }
-        }
-    }
-}
-
-// Bottom navigation row: Back, Home, Apps (Recents). Each injects the matching key event
-// on the glasses display. Text input needs no button here — with the IME fallback policy a
-// field focused on the glasses opens Gboard on the phone by itself.
-@Composable
-private fun NavigationBar(
-    onBack: () -> Unit,
-    onHome: () -> Unit,
-    onRecents: () -> Unit,
-) {
-    HorizontalDivider(color = Color(0xFF1E2A38), thickness = 1.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(BG)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        NavButton("◀", "Back", onBack)
-        NavButton("⬤", "Home", onHome)
-        NavButton("▦", "Apps", onRecents)
-    }
-}
-
-// A centered icon + small label stacked in a column; tint defaults to NAV_ICON gray
-// but can be overridden (e.g. ACCENT) to indicate an active state.
-@Composable
-private fun NavButton(icon: String, label: String, onClick: () -> Unit, tint: Color = NAV_ICON) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, modifier = Modifier.size(52.dp)) {
-            Text(icon, color = tint, fontSize = 22.sp)
-        }
-        Text(label, color = TEXT_MUTED, fontSize = 10.sp)
-    }
-}
-
-// Full-screen settings overlay (shown instead of the touchpad when gear is tapped).
-// Contains cursor/scroll speed sliders, axis rotation, natural scroll toggle, idle-dim delay, connected
-// display list, and a gesture reference guide. Scrolls, because the content is taller than
-// the phone screen. Dismissed via the "Done" button.
-@Composable
-private fun SettingsPanel(
-    sensitivity: Float,
-    scrollSpeed: Float,
-    naturalScroll: Boolean,
-    axisRotation: AxisRotation,
-    dimDelaySec: Int,
-    dexKeyboard: Boolean,
-    dexKeyboardActive: Boolean,
-    allDisplays: List<DisplayInfo>,
-    targetDisplay: DisplayInfo?,
-    onSensitivity: (Float) -> Unit,
-    onScrollSpeed: (Float) -> Unit,
-    onNaturalScroll: (Boolean) -> Unit,
-    onAxisRotation: (AxisRotation) -> Unit,
-    onDimDelay: (Int) -> Unit,
-    onDexKeyboard: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Settings", color = TEXT, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onDismiss) {
-                Text("Done", color = ACCENT, fontSize = 14.sp)
-            }
-        }
-
-        SettingSlider("Cursor Speed", sensitivity, 0.4f..2.0f, "%.1f×", onSensitivity)
-        SettingSlider("Scroll Speed", scrollSpeed, 0.3f..1.3f, "%.1f×", onScrollSpeed)
-
-        AxisRotationSetting(axisRotation, onAxisRotation)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text("Natural Scroll", color = TEXT_DIM, fontSize = 14.sp)
-                Text("Content follows finger direction", color = TEXT_MUTED, fontSize = 11.sp)
-            }
-            Switch(
-                checked = naturalScroll,
-                onCheckedChange = onNaturalScroll,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = ACCENT,
-                    checkedTrackColor = ACCENT_DIM,
-                    uncheckedThumbColor = TEXT_DIM,
-                    uncheckedTrackColor = Color(0xFF263545),
-                ),
-            )
-        }
-
-        DimDelaySetting(dimDelaySec, onDimDelay)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text("Keyboard on Phone", color = TEXT_DIM, fontSize = 14.sp)
-                Text(
-                    when {
-                        dexKeyboard && dexKeyboardActive ->
-                            "Glasses text fields open the phone keyboard (DeX style)"
-                        dexKeyboard && targetDisplay != null ->
-                            "Not supported on this device — keyboard opens on the glasses"
-                        else ->
-                            "Off: keyboard opens on the glasses; type with the cursor"
-                    },
-                    color = TEXT_MUTED, fontSize = 11.sp,
-                )
-            }
-            Switch(
-                checked = dexKeyboard,
-                onCheckedChange = onDexKeyboard,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = ACCENT,
-                    checkedTrackColor = ACCENT_DIM,
-                    uncheckedThumbColor = TEXT_DIM,
-                    uncheckedTrackColor = Color(0xFF263545),
-                ),
-            )
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Displays", color = TEXT_MUTED, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            if (allDisplays.isEmpty()) {
-                Text("No displays detected", color = Color(0xFFFF7043), fontSize = 12.sp)
-            } else {
-                allDisplays.forEach { d ->
-                    val isTarget = d.id == targetDisplay?.id
-                    Text(
-                        if (isTarget) "▶ ${d.name}  ${d.width}×${d.height}" else "  ${d.name}  ${d.width}×${d.height}",
-                        color = if (isTarget) ACCENT else TEXT_MUTED,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-            if (allDisplays.size == 1) {
-                Text(
-                    "Only 1 display — glasses may be in mirror mode. Switch to Desktop/Extended.",
-                    color = Color(0xFFFFB300), fontSize = 11.sp,
-                )
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Gesture Guide", color = TEXT_MUTED, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            GestureHint("1 finger drag", "Move cursor")
-            GestureHint("1 finger tap", "Left click")
-            GestureHint("1 finger double-tap", "Double click")
-            GestureHint("1 finger long-press", "Right click")
-            GestureHint("1 finger long-press + drag", "Select text")
-            GestureHint("2 finger tap", "Right click")
-            GestureHint("2 finger drag", "Scroll")
-            GestureHint("2 finger pinch", "Zoom page")
-            GestureHint("3 finger tap", "Moonlight capture toggle")
-        }
-    }
-}
-
-@Composable
-private fun AxisRotationSetting(selected: AxisRotation, onSelect: (AxisRotation) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Axis Rotation", color = TEXT_DIM, fontSize = 14.sp)
-        Text("Rotate cursor movement and two-finger scrolling",
-            color = TEXT_MUTED, fontSize = 11.sp)
-        Box {
-            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(axisRotationLabel(selected), color = ACCENT, modifier = Modifier.weight(1f))
-                Text("▾", color = ACCENT)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                AxisRotation.entries.forEach { rotation ->
-                    DropdownMenuItem(
-                        text = { Text(axisRotationLabel(rotation)) },
-                        onClick = {
-                            onSelect(rotation)
-                            expanded = false
-                        },
-                    )
-                }
-            }
-        }
-        Text(
-            when (selected) {
-                AxisRotation.NONE -> "Swipe right → cursor moves right"
-                AxisRotation.CLOCKWISE_45 -> "Swipe right → cursor moves down-right"
-                AxisRotation.CLOCKWISE_90 -> "Swipe right → cursor moves down"
-                AxisRotation.COUNTERCLOCKWISE_45 -> "Swipe right → cursor moves up-right"
-                AxisRotation.COUNTERCLOCKWISE_90 -> "Swipe right → cursor moves up"
-            },
-            color = TEXT_MUTED, fontSize = 11.sp,
-        )
-    }
-}
-
-private fun axisRotationLabel(rotation: AxisRotation): String = when {
-    rotation == AxisRotation.NONE -> "0° (Default)"
-    rotation.degrees > 0 -> "${rotation.degrees}° clockwise"
-    else -> "${-rotation.degrees}° counterclockwise"
-}
-
-// Idle-dim delay picker: one selectable chip per DIM_DELAY_CHOICES_SEC entry, with 0
-// rendered as "Never". The scrim is drawn by MainActivity over this app's own window only —
-// it never touches the brightness of the glasses (see MainActivity for why that matters).
-@Composable
-private fun DimDelaySetting(selectedSec: Int, onSelect: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Text("Dim Touchpad After", color = TEXT_DIM, fontSize = 14.sp)
-                Text("Blanks the phone screen when idle; glasses unaffected",
-                    color = TEXT_MUTED, fontSize = 11.sp)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DIM_DELAY_CHOICES_SEC.forEach { sec ->
-                val selected = sec == selectedSec
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (selected) ACCENT_DIM else SURFACE)
-                        .clickable { onSelect(sec) }
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        dimDelayLabel(sec),
-                        color = if (selected) ACCENT else TEXT_MUTED,
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// 0 → "Never", under a minute → "30s", otherwise whole minutes → "2m".
-private fun dimDelayLabel(sec: Int): String = when {
-    sec <= 0 -> "Never"
-    sec < 60 -> "${sec}s"
-    else -> "${sec / 60}m"
-}
-
-// A labeled Slider with the formatted current value displayed to its right.
-// label: display name; value/range: current value and allowed bounds; format: printf string
-// for the value (e.g. "%.1f×"); onChange: callback with the new float value.
-@Composable
-private fun SettingSlider(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    format: String,
-    onChange: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = TEXT_DIM, fontSize = 14.sp)
-            Text(format.format(value), color = ACCENT, fontSize = 14.sp)
-        }
-        Slider(
-            value = value,
-            onValueChange = onChange,
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                thumbColor = ACCENT,
-                activeTrackColor = ACCENT_DIM,
-                inactiveTrackColor = Color(0xFF263545),
-            ),
-        )
-    }
-}
-
-// A single row in the gesture guide: gesture description on the left, resulting action on the right.
-@Composable
-private fun GestureHint(gesture: String, action: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(gesture, color = TEXT_MUTED, fontSize = 12.sp)
-        Text(action, color = TEXT_DIM, fontSize = 12.sp)
     }
 }
