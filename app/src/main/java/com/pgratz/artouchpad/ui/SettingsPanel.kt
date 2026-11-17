@@ -90,10 +90,10 @@ internal fun SettingsPanel(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Settings", fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                            Text(if (saved) "✓ Saved" else "AR Touchpad",
+                            Text(if (saved) "✓ Saved" else "",
                                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.primary)
                         }
                         IconButton(onClick = { showInfo = true }) {
                             Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Gesture guide and displays")
@@ -311,6 +311,12 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                         }
                         if (targetDisplay == null) SupportingText("Connect your glasses in Desktop / Extended mode.")
                     }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("AR Touchpad", style = MaterialTheme.typography.titleSmall)
+                    SupportingText("A fork of the original AR Touchpad project.")
                 }
             }
         }
