@@ -17,8 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
@@ -71,38 +69,22 @@ internal fun SettingsPanel(
     connectionControls: @Composable () -> Unit,
 ) {
     var showInfo by remember { mutableStateOf(false) }
-    var saved by remember { mutableStateOf(false) }
-    val values = listOf(sensitivity, scrollSpeed, naturalScroll, axisRotation, dimDelaySec, dexKeyboard, blackTouchpad)
-    var previousValues by remember { mutableStateOf(values) }
-    LaunchedEffect(values) {
-        if (values != previousValues) {
-            saved = true
-            previousValues = values
-        }
-    }
     MaterialTheme(colorScheme = SettingsColors) {
         Box(Modifier.fillMaxSize()) {
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Settings", modifier = Modifier.weight(1f),
-                                fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                            IconButton(onClick = { showInfo = true }) {
-                                Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
-                            }
-                            Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
-                                Text("Done")
-                            }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Settings", modifier = Modifier.weight(1f),
+                            fontSize = 28.sp, fontWeight = FontWeight.Medium)
+                        IconButton(onClick = { showInfo = true }) {
+                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
                         }
-                        Text(if (saved) "✓ Saved" else "",
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary)
+                        Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
+                            Text("Done")
+                        }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
