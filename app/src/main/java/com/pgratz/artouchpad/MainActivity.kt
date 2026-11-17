@@ -91,6 +91,23 @@ class MainActivity : ComponentActivity() {
         // Applies only while this window is in front, so the phone resumes its normal
         // timeout as soon as the touchpad is backgrounded.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // A trackpad is an input peripheral, not the keyboard-focus target. Otherwise
+        // touching the phone takes focus from the external app and dismisses its menus
+        // before our gesture recognizer even sees movement. Keep setup/settings normally
+        // focusable, and restore normal behavior when the display or mouse disconnects.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.state.map {
+                    it.mouseReady && it.externalDisplayConnected && !it.showSettings
+                }.distinctUntilChanged().collect { trackpadActive ->
+                    val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                    // ALT_FOCUSABLE_IM keeps this non-focusable window below the phone
+                    // keyboard when the external display uses the fallback IME policy.
+                    window.setFlags(if (trackpadActive) flags else 0, flags)
+                }
+            }
+        }
         // Changing the delay in settings restarts the countdown against the new value, so
         // picking "Never" clears a pending dim and picking a shorter delay takes effect now.
         lifecycleScope.launch {
