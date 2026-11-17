@@ -213,6 +213,11 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     fun performDoubleClick() = mouse.doubleClick(_state.value.cursorX, _state.value.cursorY)
     fun performRightClick() = mouse.rightClick(_state.value.cursorX, _state.value.cursorY)
 
+    // Moonlight handles this locally: releases capture to Android, or recaptures it.
+    fun toggleMoonlightCapture() {
+        viewModelScope.launch(Dispatchers.IO) { mouse.toggleMoonlightCapture() }
+    }
+
     // Presses BTN_LEFT without releasing; moveCursor calls while held extend a text selection.
     fun startSelectDrag() = mouse.mouseDown()
 

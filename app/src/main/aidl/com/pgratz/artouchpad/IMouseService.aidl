@@ -64,6 +64,9 @@ interface IMouseService {
     // Returns true if the call succeeded; false if unsupported on this build.
     boolean setImePolicy(int displayId, int policy) = 12;
 
+    // Ctrl+Alt+Shift+Z toggles Moonlight's input capture on the configured display.
+    void toggleMoonlightCapture() = 13;
+
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;
 }

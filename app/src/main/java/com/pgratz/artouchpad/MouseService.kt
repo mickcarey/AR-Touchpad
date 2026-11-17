@@ -447,6 +447,46 @@ class MouseService : IMouseService.Stub() {
         }
     }
 
+    // Moonlight tracks individual modifier key events, then toggles capture once all
+    // modifiers are released. A Z event with meta flags alone does not trigger it.
+    override fun toggleMoonlightCapture() {
+        val instance = imgInstance ?: return
+        val inject = imgInjectEvent ?: return
+        val setDisp = setDisplayIdMethod ?: return
+        val targetDisplay = displayId
+        val downTime = SystemClock.uptimeMillis()
+        val keys = listOf(
+            KeyEvent.KEYCODE_CTRL_LEFT to (KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON),
+            KeyEvent.KEYCODE_ALT_LEFT to (KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON),
+            KeyEvent.KEYCODE_SHIFT_LEFT to (KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON),
+            KeyEvent.KEYCODE_Z to 0,
+        )
+        val pressed = mutableListOf<Pair<Int, Int>>()
+        var meta = 0
+        fun send(keycode: Int, action: Int) {
+            val event = KeyEvent(downTime, SystemClock.uptimeMillis(), action, keycode,
+                0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
+            setDisp.invoke(event, targetDisplay)
+            check(inject.invoke(instance, event, 0) == true) { "Key injection rejected" }
+        }
+        try {
+            for ((keycode, flags) in keys) {
+                meta = meta or flags
+                pressed.add(keycode to flags)
+                send(keycode, KeyEvent.ACTION_DOWN)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Moonlight capture shortcut failed", e)
+        } finally {
+            // Always attempt every release, even if an earlier event failed.
+            for ((keycode, flags) in pressed.asReversed()) {
+                meta = meta and flags.inv()
+                runCatching { send(keycode, KeyEvent.ACTION_UP) }
+                    .onFailure { Log.e(TAG, "Moonlight shortcut key release failed", it) }
+            }
+        }
+    }
+
     // Input: Android keycode (e.g. KEYCODE_C). Injects Ctrl+keycode via InputManagerGlobal
     // with META_CTRL_ON|META_CTRL_LEFT_ON so apps see a real Ctrl+key shortcut.
     // Used for Copy/Cut/Paste/SelectAll after a text selection without moving the cursor.
