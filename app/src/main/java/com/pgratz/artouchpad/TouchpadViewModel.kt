@@ -52,6 +52,7 @@ data class TouchpadState(
     val sensitivity: Float = 0.5f,
     val scrollSpeed: Float = 0.8f,
     val naturalScroll: Boolean = true,
+    val axisRotation: AxisRotation = AxisRotation.NONE,
     val showSettings: Boolean = false,
     val touchMode: TouchMode = TouchMode.IDLE,
     // Seconds of no input before MainActivity scrims the touchpad UI. 0 = never dim.
@@ -75,6 +76,7 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         sensitivity = prefs.getFloat("sensitivity", 0.5f),
         scrollSpeed = prefs.getFloat("scroll_speed", 0.8f),
         naturalScroll = prefs.getBoolean("natural_scroll", true),
+        axisRotation = AxisRotation.fromDegrees(prefs.getInt("axis_rotation_degrees", 0)),
         dimDelaySec = prefs.getInt("dim_delay_sec", DEFAULT_DIM_DELAY_SEC),
         dexKeyboardEnabled = prefs.getBoolean("dex_keyboard", true),
     ))
@@ -179,9 +181,10 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         smoothDx = alpha * rawDx + (1f - alpha) * smoothDx
         smoothDy = alpha * rawDy + (1f - alpha) * smoothDy
 
-        val sens = _state.value.sensitivity
-        val dx = smoothDx * sens
-        val dy = smoothDy * sens
+        val state = _state.value
+        val (dx, dy) = state.axisRotation.rotate(
+            smoothDx * state.sensitivity, smoothDy * state.sensitivity,
+        )
         if (dx == 0f && dy == 0f) return
         mouse.moveMouse(dx, dy)
 
@@ -224,9 +227,11 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     // Natural scroll (the default): content follows the fingers, so fingers moving down/right
     // scroll the view up/left. Off: the view scrolls the way the fingers move, like a wheel.
     fun performScroll(dx: Float, dy: Float) {
-        val speed = _state.value.scrollSpeed
-        val dir = if (_state.value.naturalScroll) -1f else 1f
-        mouse.scroll(dx * speed * dir, dy * speed * dir)
+        val state = _state.value
+        val speed = state.scrollSpeed
+        val dir = if (state.naturalScroll) -1f else 1f
+        val (rotatedDx, rotatedDy) = state.axisRotation.rotate(dx, dy)
+        mouse.scroll(rotatedDx * speed * dir, rotatedDy * speed * dir)
         _state.update { it.copy(touchMode = TouchMode.SCROLL) }
     }
 
@@ -261,6 +266,13 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     fun setNaturalScroll(v: Boolean) {
         prefs.edit().putBoolean("natural_scroll", v).apply()
         _state.update { it.copy(naturalScroll = v) }
+    }
+    fun setAxisRotation(rotation: AxisRotation) {
+        mouse.flushScroll()
+        smoothDx = 0f
+        smoothDy = 0f
+        prefs.edit().putInt("axis_rotation_degrees", rotation.degrees).apply()
+        _state.update { it.copy(axisRotation = rotation) }
     }
     // Seconds of idle time before the touchpad UI is scrimmed; 0 disables dimming entirely.
     // MainActivity observes this and restarts its idle timer when it changes.

@@ -9,6 +9,9 @@ Turn an Android phone into a trackpad for an external display running Android de
 - Drag with two fingers to scroll; spread or pinch to zoom.
 - Use the phone as a keyboard for text fields on the external display.
 - Keep menus open while moving the pointer from the phone's touchpad.
+- In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
+  45° or 90° clockwise or counterclockwise. The default is 0°, and your choice is saved.
+  For example, at 90° clockwise, swiping right moves the cursor down.
 
 ## Requirements
 

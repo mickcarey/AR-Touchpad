@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
+import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DisplayInfo
 import com.pgratz.artouchpad.TouchMode
 import com.pgratz.artouchpad.TouchpadViewModel
@@ -95,6 +96,7 @@ fun TouchpadScreen(viewModel: TouchpadViewModel) {
                 sensitivity = state.sensitivity,
                 scrollSpeed = state.scrollSpeed,
                 naturalScroll = state.naturalScroll,
+                axisRotation = state.axisRotation,
                 dimDelaySec = state.dimDelaySec,
                 dexKeyboard = state.dexKeyboardEnabled,
                 dexKeyboardActive = state.dexKeyboardActive,
@@ -103,6 +105,7 @@ fun TouchpadScreen(viewModel: TouchpadViewModel) {
                 onSensitivity = viewModel::setSensitivity,
                 onScrollSpeed = viewModel::setScrollSpeed,
                 onNaturalScroll = viewModel::setNaturalScroll,
+                onAxisRotation = viewModel::setAxisRotation,
                 onDimDelay = viewModel::setDimDelay,
                 onDexKeyboard = viewModel::setDexKeyboard,
                 onDismiss = viewModel::toggleSettings,
@@ -492,7 +495,7 @@ private fun NavButton(icon: String, label: String, onClick: () -> Unit, tint: Co
 }
 
 // Full-screen settings overlay (shown instead of the touchpad when gear is tapped).
-// Contains cursor/scroll speed sliders, natural scroll toggle, idle-dim delay, connected
+// Contains cursor/scroll speed sliders, axis rotation, natural scroll toggle, idle-dim delay, connected
 // display list, and a gesture reference guide. Scrolls, because the content is taller than
 // the phone screen. Dismissed via the "Done" button.
 @Composable
@@ -500,6 +503,7 @@ private fun SettingsPanel(
     sensitivity: Float,
     scrollSpeed: Float,
     naturalScroll: Boolean,
+    axisRotation: AxisRotation,
     dimDelaySec: Int,
     dexKeyboard: Boolean,
     dexKeyboardActive: Boolean,
@@ -508,6 +512,7 @@ private fun SettingsPanel(
     onSensitivity: (Float) -> Unit,
     onScrollSpeed: (Float) -> Unit,
     onNaturalScroll: (Boolean) -> Unit,
+    onAxisRotation: (AxisRotation) -> Unit,
     onDimDelay: (Int) -> Unit,
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -532,6 +537,8 @@ private fun SettingsPanel(
 
         SettingSlider("Cursor Speed", sensitivity, 0.4f..2.0f, "%.1f×", onSensitivity)
         SettingSlider("Scroll Speed", scrollSpeed, 0.3f..1.3f, "%.1f×", onScrollSpeed)
+
+        AxisRotationSetting(axisRotation, onAxisRotation)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -620,6 +627,49 @@ private fun SettingsPanel(
             GestureHint("2 finger pinch", "Zoom page")
         }
     }
+}
+
+@Composable
+private fun AxisRotationSetting(selected: AxisRotation, onSelect: (AxisRotation) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Axis Rotation", color = TEXT_DIM, fontSize = 14.sp)
+        Text("Rotate cursor movement and two-finger scrolling",
+            color = TEXT_MUTED, fontSize = 11.sp)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(axisRotationLabel(selected), color = ACCENT, modifier = Modifier.weight(1f))
+                Text("▾", color = ACCENT)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                AxisRotation.entries.forEach { rotation ->
+                    DropdownMenuItem(
+                        text = { Text(axisRotationLabel(rotation)) },
+                        onClick = {
+                            onSelect(rotation)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+        Text(
+            when (selected) {
+                AxisRotation.NONE -> "Swipe right → cursor moves right"
+                AxisRotation.CLOCKWISE_45 -> "Swipe right → cursor moves down-right"
+                AxisRotation.CLOCKWISE_90 -> "Swipe right → cursor moves down"
+                AxisRotation.COUNTERCLOCKWISE_45 -> "Swipe right → cursor moves up-right"
+                AxisRotation.COUNTERCLOCKWISE_90 -> "Swipe right → cursor moves up"
+            },
+            color = TEXT_MUTED, fontSize = 11.sp,
+        )
+    }
+}
+
+private fun axisRotationLabel(rotation: AxisRotation): String = when {
+    rotation == AxisRotation.NONE -> "0° (Default)"
+    rotation.degrees > 0 -> "${rotation.degrees}° clockwise"
+    else -> "${-rotation.degrees}° counterclockwise"
 }
 
 // Idle-dim delay picker: one selectable chip per DIM_DELAY_CHOICES_SEC entry, with 0
