@@ -15,8 +15,13 @@ Turn an Android phone into a trackpad for an external display running Android de
   there to close them. If an external settings window is unavailable, settings open
   on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
 - Settings open in a centred Material-style window, with two columns on wide displays,
-  a single column on the phone, and an expandable gesture guide. Changes save automatically.
+  a single column on the phone, and an info button for the displays and gesture guide popup.
+  Changes save immediately; a **Saved** indicator remains visible after an edit until settings close.
   The dark ink, teal and amber palette is adapted from [Vanilla8](https://vanilla8.com/).
+- **Settings → Black touchpad** keeps the phone surface pure black, including during
+  touch input. The phone stays awake, with cursor gestures and the settings edge swipe active.
+  External-display brightness is unaffected. Phone-side setup/settings remain visible if
+  the external display or mouse connection is unavailable.
 - Move the external display's cursor with one finger; tap to click.
 - Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
@@ -28,7 +33,7 @@ Turn an Android phone into a trackpad for an external display running Android de
   keys with the cursor. Choose **Settings → Popup keyboard → External display** to keep
   the phone available as a fullscreen touchpad, or choose **Phone** to type there instead.
 - Keep menus open while moving the pointer from the phone's touchpad.
-- In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
+- In **Settings → Phone orientation**, rotate cursor movement and two-finger scrolling by
   45° or 90° clockwise or counterclockwise. The default is 0°, and your choice is saved.
   For example, at 90° clockwise, swiping right moves the cursor down.
 

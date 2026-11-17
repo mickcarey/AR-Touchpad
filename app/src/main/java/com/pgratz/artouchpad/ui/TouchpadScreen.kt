@@ -90,6 +90,7 @@ fun TouchpadSettings(viewModel: TouchpadViewModel) {
             sensitivity = state.sensitivity, scrollSpeed = state.scrollSpeed,
             naturalScroll = state.naturalScroll, axisRotation = state.axisRotation,
             dimDelaySec = state.dimDelaySec, dexKeyboard = state.dexKeyboardEnabled,
+            blackTouchpad = state.blackTouchpad, onBlackTouchpad = viewModel::setBlackTouchpad,
             dexKeyboardActive = state.dexKeyboardActive, allDisplays = state.allDisplays,
             targetDisplay = state.targetDisplay, onSensitivity = viewModel::setSensitivity,
             onScrollSpeed = viewModel::setScrollSpeed, onNaturalScroll = viewModel::setNaturalScroll,

@@ -30,6 +30,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -147,17 +148,22 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
+            val state by viewModel.state.collectAsState()
             ARTouchpadTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
                     TouchpadScreen(viewModel = viewModel, settingsOnPhone = settingsOnPhone)
-                    if (isDimmed) {
+                    // A draw-only black surface keeps the digitizer and gestures active.
+                    // Phone-side recovery/settings must remain visible when disconnected.
+                    val blackPad = state.blackTouchpad && state.mouseReady &&
+                        state.externalDisplayConnected && !settingsOnPhone
+                    if (isDimmed || blackPad) {
                         // Draw-only overlay: no pointerInput modifier, so touches fall
                         // straight through to the touchpad surface underneath and the
                         // gesture that wakes the screen still counts as a gesture.
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = DIM_ALPHA)),
+                                .background(Color.Black.copy(alpha = if (blackPad) 1f else DIM_ALPHA)),
                         )
                     }
                 }
