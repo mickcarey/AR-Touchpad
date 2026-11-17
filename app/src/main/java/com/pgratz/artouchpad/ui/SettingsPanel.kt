@@ -85,22 +85,24 @@ internal fun SettingsPanel(
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Settings", fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                            Text(if (saved) "✓ Saved" else "",
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Settings", modifier = Modifier.weight(1f),
+                                fontSize = 28.sp, fontWeight = FontWeight.Medium)
+                            IconButton(onClick = { showInfo = true }) {
+                                Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                            }
+                            Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
+                                Text("Done")
+                            }
                         }
-                        IconButton(onClick = { showInfo = true }) {
-                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
-                        }
-                        Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
-                            Text("Done")
-                        }
+                        Text(if (saved) "✓ Saved" else "",
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary)
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
