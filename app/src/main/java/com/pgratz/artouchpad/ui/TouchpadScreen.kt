@@ -14,14 +14,12 @@
 
 package com.pgratz.artouchpad.ui
 
-import android.view.KeyEvent as AKeyEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -41,6 +39,7 @@ import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DisplayInfo
 import com.pgratz.artouchpad.MultiFingerTapTracker
+import com.pgratz.artouchpad.SettingsEdgeSwipe
 import com.pgratz.artouchpad.TouchMode
 import com.pgratz.artouchpad.TouchpadViewModel
 import kotlin.math.abs
@@ -60,7 +59,6 @@ private val ACCENT_DIM = Color(0xFF1A4A6A)
 private val TEXT = Color(0xFFE0E0E0)
 private val TEXT_DIM = Color(0xFF90A4AE)
 private val TEXT_MUTED = Color(0xFF546E7A)
-private val NAV_ICON = Color(0xFFB0BEC5)
 
 private const val MOVE_THRESHOLD = 5f
 // Combined travel (px) two fingers must cover before the gesture is latched as scroll or pinch.
@@ -69,143 +67,58 @@ private const val TAP_MAX_MS = 220L
 private const val LONG_PRESS_MS = 600L
 private const val DOUBLE_TAP_WINDOW_MS = 300L
 
-// Root composable. Collects ViewModel state and renders either SettingsPanel (when
-// showSettings is true) or the main layout: StatusBar → TouchpadSurface → NavigationBar.
+// The phone is entirely touchpad. Settings normally live on the external display.
 @Composable
-fun TouchpadScreen(viewModel: TouchpadViewModel) {
+fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = false) {
     val state by viewModel.state.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BG)
-            .systemBarsPadding(),
-    ) {
-        StatusBar(
-            shizukuAvailable = state.shizukuAvailable,
-            shizukuPermission = state.shizukuPermission,
-            mouseReady = state.mouseReady,
-            targetDisplay = state.targetDisplay,
-            touchMode = state.touchMode,
-            onSettingsClick = viewModel::toggleSettings,
-            onGrantShizuku = viewModel::requestShizukuPermission,
-            onConnectMouse = { viewModel.mouse.bind() },
-        )
-
-        if (state.showSettings) {
-            SettingsPanel(
-                sensitivity = state.sensitivity,
-                scrollSpeed = state.scrollSpeed,
-                naturalScroll = state.naturalScroll,
-                axisRotation = state.axisRotation,
-                dimDelaySec = state.dimDelaySec,
-                dexKeyboard = state.dexKeyboardEnabled,
-                dexKeyboardActive = state.dexKeyboardActive,
-                allDisplays = state.allDisplays,
-                targetDisplay = state.targetDisplay,
-                onSensitivity = viewModel::setSensitivity,
-                onScrollSpeed = viewModel::setScrollSpeed,
-                onNaturalScroll = viewModel::setNaturalScroll,
-                onAxisRotation = viewModel::setAxisRotation,
-                onDimDelay = viewModel::setDimDelay,
-                onDexKeyboard = viewModel::setDexKeyboard,
-                onDismiss = viewModel::toggleSettings,
-            )
-        } else {
-            TouchpadSurface(
-                modifier = Modifier.weight(1f),
-                enabled = state.mouseReady,
-                onMoveCursor = viewModel::moveCursor,
-                onClick = { viewModel.performClick() },
-                onDoubleClick = { viewModel.performDoubleClick() },
-                onRightClick = { viewModel.performRightClick() },
-                onThreeFingerTap = viewModel::toggleMoonlightCapture,
-                onScroll = viewModel::performScroll,
-                onPinch = viewModel::pinchZoom,
-                onTouchModeChanged = viewModel::setTouchMode,
-                onSelectStart = viewModel::startSelectDrag,
-                onSelectEnd = viewModel::endSelectDrag,
-            )
-            NavigationBar(
-                onBack    = { viewModel.pressKey(AKeyEvent.KEYCODE_BACK) },
-                onHome    = { viewModel.pressKey(AKeyEvent.KEYCODE_HOME) },
-                onRecents = { viewModel.pressKey(AKeyEvent.KEYCODE_APP_SWITCH) },
-            )
+    if (state.showSettings && settingsOnPhone) {
+        Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel) }
+    } else {
+        Box(Modifier.fillMaxSize().background(BG)) {
+            TouchpadSurface(Modifier.fillMaxSize(), state.mouseReady,
+                viewModel::moveCursor, viewModel::performClick, viewModel::performDoubleClick,
+                viewModel::performRightClick, viewModel::toggleMoonlightCapture,
+                viewModel::performScroll, viewModel::pinchZoom, viewModel::setTouchMode,
+                viewModel::startSelectDrag, viewModel::endSelectDrag, viewModel::openSettings)
+            if (!state.mouseReady) Column(
+                Modifier.align(Alignment.Center).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Touchpad disconnected", color = TEXT, fontSize = 18.sp)
+                ConnectionControls(viewModel)
+                TextButton(onClick = viewModel::openSettings) { Text("Settings", color = ACCENT) }
+            }
         }
     }
 }
 
-// Top status bar showing the app title, two status dots (Mouse/Display),
-// the current touch mode indicator, and contextual action buttons for each
-// unmet setup step (grant Shizuku → connect mouse).
 @Composable
-private fun StatusBar(
-    shizukuAvailable: Boolean,
-    shizukuPermission: Boolean,
-    mouseReady: Boolean,
-    targetDisplay: DisplayInfo?,
-    touchMode: TouchMode,
-    onSettingsClick: () -> Unit,
-    onGrantShizuku: () -> Unit,
-    onConnectMouse: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("AR Touchpad", color = TEXT, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatusDot(mouseReady, "Mouse")
-                    StatusDot(targetDisplay != null, "Display")
-                    val modeLabel = when (touchMode) {
-                        TouchMode.SCROLL -> "↕ scroll"
-                        TouchMode.SELECT -> "⊹ select"
-                        TouchMode.CURSOR -> "⊹ cursor"
-                        TouchMode.IDLE   -> null
-                    }
-                    modeLabel?.let { Text(it, color = ACCENT, fontSize = 11.sp) }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    !shizukuAvailable ->
-                        Text("Shizuku off", color = Color(0xFFFF7043), fontSize = 11.sp)
-                    !shizukuPermission ->
-                        TextButton(onClick = onGrantShizuku, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("Grant Shizuku", color = Color(0xFFFF7043), fontSize = 12.sp)
-                        }
-                    !mouseReady ->
-                        TextButton(onClick = onConnectMouse, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("Connect", color = Color(0xFFFFB300), fontSize = 12.sp)
-                        }
-                }
-                IconButton(onClick = onSettingsClick) {
-                    Text("⚙", color = TEXT_DIM, fontSize = 22.sp)
-                }
-            }
-        }
-
-        HorizontalDivider(color = Color(0xFF1E2A38), thickness = 1.dp)
+fun TouchpadSettings(viewModel: TouchpadViewModel) {
+    val state by viewModel.state.collectAsState()
+    Box(Modifier.fillMaxSize().background(BG)) {
+        SettingsPanel(
+            sensitivity = state.sensitivity, scrollSpeed = state.scrollSpeed,
+            naturalScroll = state.naturalScroll, axisRotation = state.axisRotation,
+            dimDelaySec = state.dimDelaySec, dexKeyboard = state.dexKeyboardEnabled,
+            dexKeyboardActive = state.dexKeyboardActive, allDisplays = state.allDisplays,
+            targetDisplay = state.targetDisplay, onSensitivity = viewModel::setSensitivity,
+            onScrollSpeed = viewModel::setScrollSpeed, onNaturalScroll = viewModel::setNaturalScroll,
+            onAxisRotation = viewModel::setAxisRotation, onDimDelay = viewModel::setDimDelay,
+            onDexKeyboard = viewModel::setDexKeyboard, onDismiss = viewModel::closeSettings,
+            connectionControls = { ConnectionControls(viewModel) },
+        )
     }
 }
 
-// Small colored circle (green = active, gray = inactive) followed by a text label.
-// Used in StatusBar to show Mouse/Display readiness at a glance.
 @Composable
-private fun StatusDot(active: Boolean, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(if (active) Color(0xFF4CAF50) else Color(0xFF424242))
-        )
-        Text(label, color = TEXT_MUTED, fontSize = 11.sp)
+private fun ConnectionControls(viewModel: TouchpadViewModel) {
+    val state by viewModel.state.collectAsState()
+    when {
+        !state.shizukuAvailable -> Text("Start Shizuku to connect the mouse.", color = TEXT_DIM)
+        !state.shizukuPermission -> TextButton(onClick = viewModel::requestShizukuPermission) {
+            Text("Grant Shizuku", color = ACCENT)
+        }
+        !state.mouseReady -> TextButton(onClick = { viewModel.mouse.bind() }) { Text("Connect mouse", color = ACCENT) }
     }
 }
 
@@ -232,21 +145,20 @@ private fun TouchpadSurface(
     onTouchModeChanged: (TouchMode) -> Unit,
     onSelectStart: () -> Unit,
     onSelectEnd: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var touchPoints by remember { mutableStateOf(listOf<Offset>()) }
     val haptic = LocalHapticFeedback.current
 
     Box(
-        modifier = modifier.padding(12.dp),
+        modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(20.dp))
                 .background(if (enabled) SURFACE else SURFACE_DISABLED)
                 .pointerInput(enabled) {
-                    if (!enabled) return@pointerInput
 
                     var lastPositions = mapOf<PointerId, Offset>()
                     var downPosition = Offset.Zero
@@ -261,6 +173,7 @@ private fun TouchpadSurface(
                     var pendingDy = 0f
                     var pendingSpan = 0f
                     val multiTap = MultiFingerTapTracker(TWO_FINGER_SLOP, TAP_MAX_MS)
+                    val edgeSwipe = SettingsEdgeSwipe(48.dp.toPx(), 72.dp.toPx(), 28.dp.toPx())
 
                     coroutineScope {
                         val scope = this  // CoroutineScope for launching the long-press timer
@@ -272,6 +185,47 @@ private fun TouchpadSurface(
                                 val pressed = event.changes.filter { it.pressed }
                                 val justPressed = event.changes.filter { it.pressed && !it.previousPressed }
                                 val justReleased = event.changes.filter { !it.pressed && it.previousPressed }
+
+                                val firstDown = justPressed.isNotEmpty() && event.changes.none { it.previousPressed }
+                                val previousEdgeDecision = edgeSwipe.decision
+                                if (firstDown) {
+                                    val p = justPressed.first().position
+                                    edgeSwipe.begin(p.x, p.y, size.width.toFloat(), size.height.toFloat(), now)
+                                }
+                                val firstPoint = event.changes.first().position
+                                val edgeDecision = edgeSwipe.update(firstPoint.x, firstPoint.y, now,
+                                    max(pressed.size, event.changes.count { it.previousPressed }), pressed.isEmpty())
+                                if (edgeDecision == SettingsEdgeSwipe.Decision.CONSUMED ||
+                                    edgeDecision == SettingsEdgeSwipe.Decision.OPEN_SETTINGS) {
+                                    longPressJob?.cancel()
+                                    multiTap.cancelTap()
+                                    lastTapTime = 0L
+                                    didMove = true
+                                    touchPoints = emptyList()
+                                    lastPositions = emptyMap()
+                                    onTouchModeChanged(TouchMode.IDLE)
+                                    event.changes.forEach { it.consume() }
+                                    if (edgeDecision == SettingsEdgeSwipe.Decision.OPEN_SETTINGS) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onOpenSettings()
+                                    }
+                                    continue
+                                }
+                                if (!enabled) { event.changes.forEach { it.consume() }; continue }
+
+                                // Rejected edge candidates return their buffered travel to the mouse.
+                                // Taps and stationary long-presses keep their existing timing.
+                                if (!firstDown && previousEdgeDecision == SettingsEdgeSwipe.Decision.PENDING &&
+                                    edgeDecision == SettingsEdgeSwipe.Decision.TRACKPAD && event.changes.size == 1) {
+                                    if (pressed.isNotEmpty()) lastPositions = mapOf(pressed.first().id to downPosition)
+                                    else {
+                                        val delta = firstPoint - downPosition
+                                        if (abs(delta.x) > MOVE_THRESHOLD || abs(delta.y) > MOVE_THRESHOLD) {
+                                            didMove = true
+                                            onMoveCursor(delta.x, delta.y)
+                                        }
+                                    }
+                                }
 
                                 touchPoints = pressed.map { it.position }
                                 val tapFingers = multiTap.update(now, event.changes.map {
@@ -306,7 +260,13 @@ private fun TouchpadSurface(
 
                                 // Do not turn trailing fingers into cursor movement/scroll, or
                                 // a three-finger gesture into a two-finger action during release.
-                                val suppressMotion = multiTap.maxFingers >= 3 ||
+                                if (edgeDecision == SettingsEdgeSwipe.Decision.PENDING &&
+                                    (abs(firstPoint.x - downPosition.x) > MOVE_THRESHOLD ||
+                                        abs(firstPoint.y - downPosition.y) > MOVE_THRESHOLD)) {
+                                    didMove = true
+                                    longPressJob?.cancel()
+                                }
+                                val suppressMotion = edgeDecision == SettingsEdgeSwipe.Decision.PENDING || multiTap.maxFingers >= 3 ||
                                     (multiTap.maxFingers >= 2 && multiTap.releasing)
                                 if (suppressMotion) {
                                     lastPositions = pressed.associate { it.id to it.position }
@@ -475,53 +435,10 @@ private fun TouchpadSurface(
             }
         }
 
-        // Disabled overlay text (outside Canvas, inside Box)
-        if (!enabled) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Touchpad Disabled", color = TEXT_MUTED, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Grant Shizuku permission to activate", color = Color(0xFF37474F), fontSize = 14.sp)
-            }
-        }
     }
 }
 
-// Bottom navigation row: Back, Home, Apps (Recents). Each injects the matching key event
-// on the glasses display. Text input needs no button here — with the IME fallback policy a
-// field focused on the glasses opens Gboard on the phone by itself.
-@Composable
-private fun NavigationBar(
-    onBack: () -> Unit,
-    onHome: () -> Unit,
-    onRecents: () -> Unit,
-) {
-    HorizontalDivider(color = Color(0xFF1E2A38), thickness = 1.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(BG)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        NavButton("◀", "Back", onBack)
-        NavButton("⬤", "Home", onHome)
-        NavButton("▦", "Apps", onRecents)
-    }
-}
-
-// A centered icon + small label stacked in a column; tint defaults to NAV_ICON gray
-// but can be overridden (e.g. ACCENT) to indicate an active state.
-@Composable
-private fun NavButton(icon: String, label: String, onClick: () -> Unit, tint: Color = NAV_ICON) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, modifier = Modifier.size(52.dp)) {
-            Text(icon, color = tint, fontSize = 22.sp)
-        }
-        Text(label, color = TEXT_MUTED, fontSize = 10.sp)
-    }
-}
-
-// Full-screen settings overlay (shown instead of the touchpad when gear is tapped).
+// Shared settings content for the external window and phone fallback.
 // Contains cursor/scroll speed sliders, axis rotation, natural scroll toggle, idle-dim delay, connected
 // display list, and a gesture reference guide. Scrolls, because the content is taller than
 // the phone screen. Dismissed via the "Done" button.
@@ -543,6 +460,7 @@ private fun SettingsPanel(
     onDimDelay: (Int) -> Unit,
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
+    connectionControls: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -562,6 +480,9 @@ private fun SettingsPanel(
             }
         }
 
+        connectionControls()
+        Text("Phone rotated 90° anticlockwise: swipe down along the right edge to open Settings here.",
+            color = TEXT_DIM, fontSize = 12.sp)
         SettingSlider("Cursor Speed", sensitivity, 0.4f..2.0f, "%.1f×", onSensitivity)
         SettingSlider("Scroll Speed", scrollSpeed, 0.3f..1.3f, "%.1f×", onScrollSpeed)
 

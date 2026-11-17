@@ -4,6 +4,16 @@ Turn an Android phone into a trackpad for an external display running Android de
 
 ## Features
 
+- The touchpad fills the entire phone screen, including the space previously used by
+  the title and navigation buttons. Android's system bars are hidden until a system swipe.
+- With the phone rotated **90° anticlockwise**, swipe **down along the right edge**
+  to open the app's settings on the external display. Start just inside the edge,
+  away from the corners, and swipe at least about 2 cm. In upright phone coordinates,
+  this is a right-to-left swipe along the bottom edge. This gesture is independent
+  of the cursor's Axis Rotation setting.
+- The phone remains a touchpad while settings are open on the glasses. Click **Done**
+  there to close them. If an external settings window is unavailable, settings open
+  on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
 - Move the external display's cursor with one finger; tap to click.
 - Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
@@ -11,6 +21,9 @@ Turn an Android phone into a trackpad for an external display running Android de
   its mouse capture back to Android. This sends Moonlight's Ctrl+Alt+Shift+Z shortcut;
   repeat while Moonlight is focused to recapture. The stream stays open.
 - Use the phone as a keyboard for text fields on the external display.
+- The popup keyboard stays on the external display by default so you can click its
+  keys with the cursor. **Settings → Keyboard on Phone** is an optional override;
+  leave it off to keep the phone available as a fullscreen touchpad.
 - Keep menus open while moving the pointer from the phone's touchpad.
 - In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
   45° or 90° clockwise or counterclockwise. The default is 0°, and your choice is saved.
@@ -42,6 +55,37 @@ Requires Android Studio with the Android SDK and NDK installed.
 ```bash
 ./gradlew assembleDebug
 ```
+
+On Windows PowerShell, use `.\gradlew.bat assembleDebug` (JDK 17 recommended).
+
+## Wireless installation from the CLI (Windows)
+
+Keep the PC and phone on the same Wi-Fi. On the phone enable **Developer options →
+Wireless debugging**, then open **Pair device with pairing code**.
+
+```powershell
+# Use the pairing dialog's IP:port. adb prompts for its six-digit code.
+adb pair 192.168.1.10:37123
+
+# Close that dialog. Use the DIFFERENT IP:port on the main Wireless debugging page.
+.\scripts\install-wireless.ps1 -Address 192.168.1.10:40001 -Launch
+
+# Subsequent builds, when exactly one wireless device is connected:
+.\scripts\install-wireless.ps1 -Launch
+```
+
+Alternatively, pass `-PairAddress IP:PAIR_PORT -Address IP:CONNECT_PORT` to the script
+to pair and install in one invocation. It finds `adb` on PATH or in the Android SDK,
+builds the debug APK, and installs with `adb install -r` to retain app data. It never
+automatically uninstalls an existing app. Use `-SkipBuild` to install the last build,
+or `-Serial` to select among multiple connected wireless devices.
+
+If discovery fails, run `adb mdns services` and `adb devices -l`, then reconnect with
+`-Address` using the phone's current connection port (it can change). A pairing port
+is not an installation port. If installation reports a signing mismatch, use a build
+signed with the existing app's key; uninstalling would erase its data.
+
+See Android's [wireless ADB documentation](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi).
 
 ## License
 
