@@ -1,5 +1,6 @@
 package com.pgratz.artouchpad.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -18,16 +19,21 @@ import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.DisplayInfo
 
-// Neutral Material surfaces and a restrained blue accent, scoped to settings.
+// Vanilla8's published brandColors at https://vanilla8.com/: ink #081211,
+// teal #014D67 / #154462, amber #E6AF52, orange #E45F02 and olive #55732B.
+// Adapted to dark settings surfaces with lighter text for contrast.
 private val SettingsColors = darkColorScheme(
-    primary = Color(0xFFA8C7FA), onPrimary = Color(0xFF062E6F),
-    primaryContainer = Color(0xFF244574), onPrimaryContainer = Color(0xFFD3E3FD),
-    secondaryContainer = Color(0xFF35445C), onSecondaryContainer = Color(0xFFD3E3FD),
-    background = Color(0xFF1B1B1F), surface = Color(0xFF1B1B1F),
-    surfaceContainer = Color(0xFF25262A), surfaceContainerHigh = Color(0xFF303136),
-    surfaceVariant = Color(0xFF44474E), onSurface = Color(0xFFE3E3E8),
-    onSurfaceVariant = Color(0xFFC4C6D0), outline = Color(0xFF8E9099),
-    outlineVariant = Color(0xFF44474E),
+    primary = Color(0xFFE6AF52), onPrimary = Color(0xFF081211),
+    primaryContainer = Color(0xFF154462), onPrimaryContainer = Color(0xFFF4F0E6),
+    secondary = Color(0xFFE69402), onSecondary = Color(0xFF081211),
+    secondaryContainer = Color(0xFF014D67), onSecondaryContainer = Color(0xFFF4F0E6),
+    tertiary = Color(0xFFE45F02), onTertiary = Color(0xFF081211),
+    tertiaryContainer = Color(0xFF55732B), onTertiaryContainer = Color(0xFFFFF5DF),
+    background = Color(0xFF081211), surface = Color(0xFF081211),
+    surfaceContainer = Color(0xFF142624), surfaceContainerHigh = Color(0xFF1B3333),
+    surfaceVariant = Color(0xFF2E4545), onSurface = Color(0xFFF4F0E6),
+    onSurfaceVariant = Color(0xFFC2CCBF), outline = Color(0xFF82918A),
+    outlineVariant = Color(0xFF36504C), surfaceTint = Color(0xFFE6AF52),
 )
 
 /** Same controls on both displays; wide windows use two columns, phones use one. */
@@ -72,7 +78,7 @@ internal fun SettingsPanel(
                         verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         connectionControls()
                         val pointer: @Composable () -> Unit = {
-                            SettingsSection("Pointer", "Movement and scrolling") {
+                            SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
                                 SpeedSetting("Cursor speed", sensitivity, 0.4f..2f, onSensitivity)
                                 SpeedSetting("Scroll speed", scrollSpeed, 0.3f..1.3f, onScrollSpeed)
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -111,7 +117,7 @@ internal fun SettingsPanel(
                                         else -> "Connect an external display to use this option."
                                     })
                                 }
-                                SettingsSection("Displays") {
+                                SettingsSection("Displays", accent = Color(0xFF55732B)) {
                                     if (allDisplays.isEmpty()) SupportingText("No displays detected.")
                                     allDisplays.forEachIndexed { i, d ->
                                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -160,11 +166,15 @@ private fun SupportingText(text: String) {
 }
 
 @Composable
-private fun SettingsSection(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
+    content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.width(4.dp).height(22.dp).background(accent, RoundedCornerShape(2.dp)))
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                }
                 if (subtitle != null) SupportingText(subtitle)
             }
             content()

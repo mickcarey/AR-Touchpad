@@ -16,6 +16,7 @@ Turn an Android phone into a trackpad for an external display running Android de
   on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
 - Settings open in a centred Material-style window, with two columns on wide displays,
   a single column on the phone, and an expandable gesture guide. Changes save automatically.
+  The dark ink, teal and amber palette is adapted from [Vanilla8](https://vanilla8.com/).
 - Move the external display's cursor with one finger; tap to click.
 - Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
