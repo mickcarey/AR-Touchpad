@@ -96,7 +96,7 @@ internal fun SettingsPanel(
                                 color = if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         IconButton(onClick = { showInfo = true }) {
-                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Displays and gesture guide")
+                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Gesture guide and displays")
                         }
                         Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
                             Text("Done")
@@ -259,38 +259,18 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
         contentAlignment = Alignment.Center) {
         Surface(Modifier.widthIn(max = 720.dp).fillMaxWidth(0.92f).heightIn(max = maxHeight * 0.94f)
-            .semantics { paneTitle = "Displays and gestures" }
+            .semantics { paneTitle = "Gestures and displays" }
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
             shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(24.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Displays & gestures", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    Text("Gestures & displays", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    SettingsSection("Displays", accent = Color(0xFF55732B)) {
-                        if (allDisplays.isEmpty()) SupportingText("No displays detected.")
-                        allDisplays.forEachIndexed { i, d ->
-                            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(d.name, style = MaterialTheme.typography.titleSmall)
-                                    SupportingText("${d.width} × ${d.height}")
-                                }
-                                if (d.id == targetDisplay?.id) Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(8.dp)) {
-                                    Text("Active", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                        if (targetDisplay == null) SupportingText("Connect your glasses in Desktop / Extended mode.")
-                    }
                     SettingsSection("Gesture guide", accent = Color(0xFFE45F02)) {
                         listOf(
                             "One-finger drag" to "Move cursor",
@@ -310,6 +290,26 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         SupportingText("To reopen settings: with the phone 90° anticlockwise, swipe down along its right edge.")
+                    }
+                    SettingsSection("Displays", accent = Color(0xFF55732B)) {
+                        if (allDisplays.isEmpty()) SupportingText("No displays detected.")
+                        allDisplays.forEachIndexed { i, d ->
+                            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(d.name, style = MaterialTheme.typography.titleSmall)
+                                    SupportingText("${d.width} × ${d.height}")
+                                }
+                                if (d.id == targetDisplay?.id) Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(8.dp)) {
+                                    Text("Active", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        if (targetDisplay == null) SupportingText("Connect your glasses in Desktop / Extended mode.")
                     }
                 }
             }
