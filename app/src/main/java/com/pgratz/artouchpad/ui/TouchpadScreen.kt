@@ -164,7 +164,7 @@ private fun TouchpadSurface(
                     var pendingDy = 0f
                     var pendingSpan = 0f
                     val multiTap = MultiFingerTapTracker(TWO_FINGER_SLOP, TAP_MAX_MS)
-                    val edgeSwipe = SettingsEdgeSwipe(48.dp.toPx(), 72.dp.toPx(), 28.dp.toPx())
+                    val edgeSwipe = SettingsEdgeSwipe(56.dp.toPx(), 72.dp.toPx(), 36.dp.toPx())
 
                     coroutineScope {
                         val scope = this  // CoroutineScope for launching the long-press timer

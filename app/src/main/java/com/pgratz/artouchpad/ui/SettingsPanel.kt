@@ -289,7 +289,7 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("To reopen settings: with the phone 90° anticlockwise, swipe down along its right edge.")
+                        SupportingText("To reopen settings: swipe across most of the phone's top or bottom edge in portrait, in either direction. This stays the same for every cursor rotation.")
                     }
                     SettingsSection("Displays", accent = Color(0xFF55732B)) {
                         if (allDisplays.isEmpty()) SupportingText("No displays detected.")

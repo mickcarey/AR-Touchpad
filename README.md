@@ -6,11 +6,10 @@ Turn an Android phone into a trackpad for an external display running Android de
 
 - The touchpad fills the entire phone screen, including the space previously used by
   the title and navigation buttons. Android's system bars are hidden until a system swipe.
-- With the phone rotated **90° anticlockwise**, swipe **down along the right edge**
-  to open the app's settings on the external display. Start just inside the edge,
-  away from the corners, and swipe at least about 2 cm. In upright phone coordinates,
-  this is a right-to-left swipe along the bottom edge. This gesture is independent
-  of the cursor's Axis Rotation setting.
+- Swipe across most of either the phone's **top or bottom edge in portrait** to open
+  settings on the external display. Start just inside the edge and travel about
+  **two-thirds of the phone's width**, left-to-right or right-to-left, then lift.
+  The gesture uses the same physical edges regardless of the cursor-rotation setting.
 - The phone remains a touchpad while settings are open on the glasses. Click **Done**
   there to close them. If an external settings window is unavailable, settings open
   on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.

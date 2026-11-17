@@ -2,13 +2,14 @@ package com.pgratz.artouchpad
 
 import kotlin.math.abs
 
-/** Phone stays portrait-locked. At 90° anticlockwise, its bottom edge is the user's
- * right edge, and a downward stroke travels right-to-left in phone coordinates. */
+/** A horizontal sweep along either portrait top/bottom edge, in either direction.
+ * Uses touch-surface coordinates, independent of cursor axis rotation. */
 class SettingsEdgeSwipe(
     private val edgeWidth: Float,
     private val minimumTravel: Float,
     private val crossSlop: Float,
     private val maximumDurationMs: Long = 500,
+    private val requiredWidthFraction: Float = 0.65f,
 ) {
     enum class Decision { TRACKPAD, PENDING, CONSUMED, OPEN_SETTINGS }
     var decision = Decision.TRACKPAD
@@ -19,11 +20,14 @@ class SettingsEdgeSwipe(
     private var eligible = false
     private var claimed = false
     private var active = false
+    private var requiredTravel = 0f
+    private var direction = 1f
 
     fun begin(x: Float, y: Float, width: Float, height: Float, time: Long): Decision {
         startX = x; startY = y; startTime = time
-        // Exclude corners; Android owns system navigation gestures right at the boundary.
-        eligible = y >= height - edgeWidth && x >= crossSlop && x <= width - crossSlop
+        requiredTravel = width * requiredWidthFraction
+        eligible = width > 0 && height > 0 && x in 0f..width && y in 0f..height &&
+            (y <= edgeWidth || y >= height - edgeWidth)
         claimed = false
         active = true
         decision = if (eligible) Decision.PENDING else Decision.TRACKPAD
@@ -32,13 +36,19 @@ class SettingsEdgeSwipe(
 
     fun update(x: Float, y: Float, time: Long, pointerCount: Int, released: Boolean): Decision {
         if (!active) return Decision.TRACKPAD
-        val travel = startX - x
+        val dx = x - startX
+        val travel = abs(dx)
         val straight = abs(y - startY) <= crossSlop
-        val deadline = if (claimed) maximumDurationMs * 3 else maximumDurationMs
-        if (pointerCount > 1 || !straight || travel < -crossSlop || time - startTime > deadline) eligible = false
-        if (eligible && travel >= minimumTravel) claimed = true
+        // Claim early to keep the cursor still; allow a relaxed full-width sweep after that.
+        val deadline = if (claimed) maximumDurationMs * 6 else maximumDurationMs
+        if (pointerCount > 1 || !straight || time - startTime > deadline ||
+            (claimed && dx * direction < -crossSlop)) eligible = false
+        if (!claimed && eligible && travel >= minOf(minimumTravel, requiredTravel)) {
+            claimed = true
+            direction = if (dx >= 0) 1f else -1f
+        }
         decision = when {
-            claimed && released && eligible && travel >= minimumTravel -> Decision.OPEN_SETTINGS
+            claimed && released && eligible && dx * direction >= requiredTravel -> Decision.OPEN_SETTINGS
             claimed -> Decision.CONSUMED
             eligible && !released -> Decision.PENDING
             else -> Decision.TRACKPAD
