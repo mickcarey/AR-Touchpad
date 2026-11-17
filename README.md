@@ -85,6 +85,28 @@ Requires Android Studio (for the SDK) and NDK r25+.
 
 The NDK CMake build compiles `libartouchpad.so` for `arm64-v8a` automatically.
 
+## Verifying menu navigation on an external display
+
+The active touchpad window accepts touches without taking keyboard focus. This
+prevents touching the phone from dismissing focus-sensitive menus on the external
+display. Normal window focus is restored in settings or when the mouse/display
+is unavailable. The phone keyboard can still appear above the touchpad.
+
+On a phone with Shizuku and an external display connected:
+
+1. Open a Chrome bookmark folder with a tap. Touch down again and immediately move
+   the pointer into the menu; the folder should remain open. Tap a subfolder, move
+   again, and tap a bookmark. Repeat with a pause between gestures.
+2. Repeat with a right-click context menu and another app's dropdown menu.
+3. Focus a text field on the external display with phone-keyboard mode enabled;
+   verify the keyboard is visible and typing goes to that field.
+4. Open/close touchpad settings, disconnect/reconnect the display, and background/
+   reopen the app. Check that settings remain usable and menu navigation still works.
+
+For focus diagnostics, use `adb shell dumpsys window windows`: the active touchpad
+window should have `NOT_FOCUSABLE` and `ALT_FOCUSABLE_IM`, but not `NOT_TOUCHABLE`.
+These two focus flags should be absent in settings or without an external display.
+
 ## License
 
 Copyright 2026 Paul Gratz
