@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DisplayInfo
+import com.pgratz.artouchpad.MultiFingerTapTracker
 import com.pgratz.artouchpad.TouchMode
 import com.pgratz.artouchpad.TouchpadViewModel
 import kotlin.math.abs
@@ -118,6 +119,7 @@ fun TouchpadScreen(viewModel: TouchpadViewModel) {
                 onClick = { viewModel.performClick() },
                 onDoubleClick = { viewModel.performDoubleClick() },
                 onRightClick = { viewModel.performRightClick() },
+                onThreeFingerTap = viewModel::toggleMoonlightCapture,
                 onScroll = viewModel::performScroll,
                 onPinch = viewModel::pinchZoom,
                 onTouchModeChanged = viewModel::setTouchMode,
@@ -210,8 +212,9 @@ private fun StatusDot(active: Boolean, label: String) {
 // The main touch surface. Intercepts raw pointer events with a single pointerInput handler:
 //   1 finger: tap (click), double-tap, long-press (right-click), long-press+drag (select text),
 //             or drag (cursor move).
-//   2 fingers: pinch (spread > translate → zoom) or drag (translate > spread → scroll),
+//   2 fingers: tap (right-click), pinch (spread > translate → zoom) or drag (translate > spread → scroll),
 //             decided once per gesture after TWO_FINGER_SLOP of travel.
+//   3 fingers: tap to toggle Moonlight input capture.
 // Renders a dot grid and live touch point indicators on a Canvas.
 private enum class TwoFingerMode { UNDECIDED, SCROLL, PINCH }
 
@@ -223,6 +226,7 @@ private fun TouchpadSurface(
     onClick: () -> Unit,
     onDoubleClick: () -> Unit,
     onRightClick: () -> Unit,
+    onThreeFingerTap: () -> Unit,
     onScroll: (Float, Float) -> Unit,
     onPinch: (Float) -> Unit,
     onTouchModeChanged: (TouchMode) -> Unit,
@@ -256,6 +260,7 @@ private fun TouchpadSurface(
                     var pendingDx = 0f
                     var pendingDy = 0f
                     var pendingSpan = 0f
+                    val multiTap = MultiFingerTapTracker(TWO_FINGER_SLOP, TAP_MAX_MS)
 
                     coroutineScope {
                         val scope = this  // CoroutineScope for launching the long-press timer
@@ -263,31 +268,50 @@ private fun TouchpadSurface(
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
-                                val now = System.currentTimeMillis()
+                                val now = event.changes.first().uptimeMillis
                                 val pressed = event.changes.filter { it.pressed }
                                 val justPressed = event.changes.filter { it.pressed && !it.previousPressed }
                                 val justReleased = event.changes.filter { !it.pressed && it.previousPressed }
 
                                 touchPoints = pressed.map { it.position }
+                                val tapFingers = multiTap.update(now, event.changes.map {
+                                    MultiFingerTapTracker.Contact(it.id.value, it.position.x, it.position.y, it.pressed)
+                                })
 
-                                if (justPressed.isNotEmpty() && pressed.size == 1) {
+                                if (justPressed.isNotEmpty() && event.changes.none { it.previousPressed }) {
                                     longPressJob?.cancel()
                                     isLongPress = false
                                     isSelectMode = false
                                     downTime = now
                                     didMove = false
+                                    twoFingerMode = TwoFingerMode.UNDECIDED
+                                    pendingDx = 0f; pendingDy = 0f; pendingSpan = 0f
                                     downPosition = pressed.first().position
                                     lastPositions = pressed.associate { it.id to it.position }
                                     // Timer fires after LONG_PRESS_MS if finger hasn't moved;
                                     // haptic confirms entry; subsequent drag transitions into select mode.
-                                    longPressJob = scope.launch {
+                                    longPressJob = if (pressed.size == 1) scope.launch {
                                         delay(LONG_PRESS_MS)
                                         isLongPress = true
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
+                                    } else null
                                 }
 
-                                when (pressed.size) {
+                                if (multiTap.maxFingers >= 2) {
+                                    longPressJob?.cancel()
+                                    isLongPress = false
+                                    lastTapTime = 0L
+                                    if (isSelectMode) { onSelectEnd(); isSelectMode = false }
+                                }
+
+                                // Do not turn trailing fingers into cursor movement/scroll, or
+                                // a three-finger gesture into a two-finger action during release.
+                                val suppressMotion = multiTap.maxFingers >= 3 ||
+                                    (multiTap.maxFingers >= 2 && multiTap.releasing)
+                                if (suppressMotion) {
+                                    lastPositions = pressed.associate { it.id to it.position }
+                                    event.changes.forEach { it.consume() }
+                                } else when (pressed.size) {
                                     1 -> {
                                         val p = pressed.first()
                                         val last = lastPositions[p.id]
@@ -316,6 +340,7 @@ private fun TouchpadSurface(
                                             // every delta is forwarded so slow movements aren't swallowed.
                                             if (!didMove && moved && !isLongPress) {
                                                 didMove = true
+                                                multiTap.cancelTap()
                                                 longPressJob?.cancel()
                                             }
 
@@ -337,8 +362,6 @@ private fun TouchpadSurface(
                                             // Second finger just landed: a new two-finger gesture.
                                             twoFingerMode = TwoFingerMode.UNDECIDED
                                             pendingDx = 0f; pendingDy = 0f; pendingSpan = 0f
-                                            // Two fingers down is never a tap, however still they are held.
-                                            didMove = true
                                         }
                                         if (lastPositions.size == 2) {
                                             val ids = pressed.map { it.id }
@@ -365,6 +388,7 @@ private fun TouchpadSurface(
                                                         pendingDx += dx; pendingDy += dy; pendingSpan += dSpan
                                                         val travel = sqrt(pendingDx * pendingDx + pendingDy * pendingDy)
                                                         if (max(travel, abs(pendingSpan)) >= TWO_FINGER_SLOP) {
+                                                            multiTap.cancelTap()
                                                             // The travel that got us here is forwarded, not discarded.
                                                             if (abs(pendingSpan) > travel) {
                                                                 twoFingerMode = TwoFingerMode.PINCH
@@ -395,6 +419,9 @@ private fun TouchpadSurface(
                                     onTouchModeChanged(TouchMode.IDLE)
 
                                     when {
+                                        tapFingers == 2 -> onRightClick()
+                                        tapFingers == 3 -> onThreeFingerTap()
+                                        multiTap.maxFingers >= 2 -> Unit
                                         isSelectMode -> onSelectEnd()
                                         !didMove && duration >= LONG_PRESS_MS -> onRightClick()
                                         !didMove && duration < TAP_MAX_MS -> {
@@ -623,8 +650,10 @@ private fun SettingsPanel(
             GestureHint("1 finger double-tap", "Double click")
             GestureHint("1 finger long-press", "Right click")
             GestureHint("1 finger long-press + drag", "Select text")
+            GestureHint("2 finger tap", "Right click")
             GestureHint("2 finger drag", "Scroll")
             GestureHint("2 finger pinch", "Zoom page")
+            GestureHint("3 finger tap", "Moonlight capture toggle")
         }
     }
 }

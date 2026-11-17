@@ -41,7 +41,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(18)  // bumped — uinput device now declares hi-res wheel axes
+        .version(19)  // adds Moonlight capture shortcut to the service interface
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -188,6 +188,8 @@ class ShizukuMouseController {
 
     // Injects Ctrl+keycode (e.g. KEYCODE_C for Copy) without moving the cursor.
     fun pressKeyWithCtrl(keycode: Int) { runCatching { service?.pressKeyWithCtrl(keycode) } }
+
+    fun toggleMoonlightCapture() { runCatching { service?.toggleMoonlightCapture() } }
 
     // Injects a Ctrl+scroll MotionEvent for content-level zoom in Chrome/WebView apps.
     fun ctrlScroll(amount: Float) { runCatching { service?.ctrlScroll(amount) } }

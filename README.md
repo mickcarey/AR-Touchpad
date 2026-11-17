@@ -5,8 +5,11 @@ Turn an Android phone into a trackpad for an external display running Android de
 ## Features
 
 - Move the external display's cursor with one finger; tap to click.
-- Double tap to double-click and long-press to right-click.
+- Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
+- Tap with three fingers while Moonlight is focused on the external display to release
+  its mouse capture back to Android. This sends Moonlight's Ctrl+Alt+Shift+Z shortcut;
+  repeat while Moonlight is focused to recapture. The stream stays open.
 - Use the phone as a keyboard for text fields on the external display.
 - Keep menus open while moving the pointer from the phone's touchpad.
 - In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
