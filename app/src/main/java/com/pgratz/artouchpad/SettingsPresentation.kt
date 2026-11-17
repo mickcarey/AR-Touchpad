@@ -1,8 +1,11 @@
 package com.pgratz.artouchpad
 
 import android.app.Presentation
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.Display
+import android.view.Gravity
 import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.platform.ComposeView
@@ -21,6 +24,7 @@ class SettingsPresentation(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         window?.decorView?.apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
@@ -40,7 +44,8 @@ class SettingsPresentation(
     override fun onStart() {
         super.onStart()
         val metrics = context.resources.displayMetrics
-        window?.setLayout(minOf((640 * metrics.density).toInt(), (metrics.widthPixels * 0.9f).toInt()),
-            (metrics.heightPixels * 0.9f).toInt())
+        window?.setGravity(Gravity.CENTER)
+        window?.setLayout(minOf((1120 * metrics.density).toInt(), (metrics.widthPixels * 0.92f).toInt()),
+            minOf((1000 * metrics.density).toInt(), (metrics.heightPixels * 0.9f).toInt()))
     }
 }

@@ -14,6 +14,8 @@ Turn an Android phone into a trackpad for an external display running Android de
 - The phone remains a touchpad while settings are open on the glasses. Click **Done**
   there to close them. If an external settings window is unavailable, settings open
   on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
+- Settings open in a centred Material-style window, with two columns on wide displays,
+  a single column on the phone, and an expandable gesture guide. Changes save automatically.
 - Move the external display's cursor with one finger; tap to click.
 - Double tap to double-click; tap with two fingers to right-click (long-press also works).
 - Drag with two fingers to scroll; spread or pinch to zoom.
@@ -22,8 +24,8 @@ Turn an Android phone into a trackpad for an external display running Android de
   repeat while Moonlight is focused to recapture. The stream stays open.
 - Use the phone as a keyboard for text fields on the external display.
 - The popup keyboard stays on the external display by default so you can click its
-  keys with the cursor. **Settings → Keyboard on Phone** is an optional override;
-  leave it off to keep the phone available as a fullscreen touchpad.
+  keys with the cursor. Choose **Settings → Popup keyboard → External display** to keep
+  the phone available as a fullscreen touchpad, or choose **Phone** to type there instead.
 - Keep menus open while moving the pointer from the phone's touchpad.
 - In **Settings → Axis Rotation**, rotate cursor movement and two-finger scrolling by
   45° or 90° clockwise or counterclockwise. The default is 0°, and your choice is saved.
