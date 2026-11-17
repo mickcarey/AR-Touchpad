@@ -2,6 +2,8 @@
 
 Turn an Android phone into a trackpad for an external display running Android desktop mode. The app was developed with Viture XR glasses, but should work with other displays that support Android's extended desktop.
 
+This is a fork of the original AR Touchpad project.
+
 ## Features
 
 - The touchpad fills the entire phone screen, including the space previously used by
@@ -14,9 +16,11 @@ Turn an Android phone into a trackpad for an external display running Android de
   there to close them. If an external settings window is unavailable, settings open
   on the phone instead. Shizuku setup/reconnect controls remain available when disconnected.
 - Settings open in a centred Material-style window, with two columns on wide displays,
-  a single column on the phone, and an info button for the displays and gesture guide popup.
-  Changes save immediately; a **Saved** indicator remains visible after an edit until settings close.
+  a single column on the phone, and the title aligned with the info and **Done** buttons.
+  Changes save immediately, without a save button or status message.
   The dark ink, teal and amber palette is adapted from [Vanilla8](https://vanilla8.com/).
+- The info button opens **Information**, with the gesture guide first, display details
+  below it, and the fork attribution at the end of the scrolling content.
 - **Settings → Black touchpad** keeps the phone surface pure black, including during
   touch input. The phone stays awake, with cursor gestures and the settings edge swipe active.
   External-display brightness is unaffected. Phone-side setup/settings remain visible if
@@ -64,6 +68,16 @@ Requires Android Studio with the Android SDK and NDK installed.
 ```
 
 On Windows PowerShell, use `.\gradlew.bat assembleDebug` (JDK 17 recommended).
+
+To run the local unit tests and Android lint:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug
+```
+
+Unit tests cover cursor rotation, multi-finger gesture recognition, and the settings
+edge swipe. Check external-display settings, the popup keyboard, and touchpad behaviour
+on a connected device as well.
 
 ## Wireless installation from the CLI (Windows)
 
