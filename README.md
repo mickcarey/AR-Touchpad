@@ -15,9 +15,9 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 
 **👓 Works with XREAL One Pro.** This fork is developed and tested primarily with **XREAL One Pro glasses connected to a Pixel 9**—the everyday setup behind these features and fixes.
 
-**Built on [AR Touchpad by Paul Gratz](https://github.com/pgratz1/AR-Touchpad).** The original project supplies the foundation: a real Android system cursor, a Shizuku-powered virtual mouse, and touchpad gestures for an extended display. This [fork by mickcarey](https://github.com/mickcarey/Android-Touchpad) builds on that work with fullscreen controls, Pocket mode, external settings, orientation calibration, and reliability improvements. Thank you, Paul! 💛
+**Built on [AR Touchpad by Paul Gratz](https://github.com/pgratz1/AR-Touchpad).** The original project supplies the foundation: a real Android system cursor, a Shizuku-powered virtual mouse, and touchpad gestures for an extended display. This [fork by mickcarey](https://github.com/mickcarey/AR-Touchpad) builds on that work with fullscreen controls, Pocket mode, external settings, orientation calibration, and reliability improvements. Thank you, Paul! 💛
 
-**Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/Android-Touchpad/fork), tweak it, and make it fit your own workflow!
+**Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/AR-Touchpad/fork), tweak it, and make it fit your own workflow!
 
 [What's new](#-what-this-fork-adds) · [Gestures](#-the-gesture-cheat-sheet) · [Fixes](#-smoother-more-reliable) · [Setup](#-get-going) · [Build](#-build-and-check)
 
@@ -111,8 +111,8 @@ The main development and testing setup for this fork is **Pixel 9 + XREAL One Pr
 Requires Android Studio with the Android SDK and NDK installed; JDK 17 is recommended for Gradle.
 
 ```bash
-git clone https://github.com/mickcarey/Android-Touchpad.git
-cd Android-Touchpad
+git clone https://github.com/mickcarey/AR-Touchpad.git
+cd AR-Touchpad
 
 # Build the debug APK
 ./gradlew assembleDebug
@@ -163,7 +163,7 @@ See Android's [wireless ADB documentation](https://developer.android.com/tools/a
 ## 💛 Credits & licence
 
 - **Original app:** [Paul Gratz's AR Touchpad](https://github.com/pgratz1/AR-Touchpad), originally developed for Viture XR glasses. The original virtual-mouse and Shizuku architecture made this fork possible.
-- **This fork:** [mickcarey / Android-Touchpad](https://github.com/mickcarey/Android-Touchpad).
+- **This fork:** [mickcarey / AR-Touchpad](https://github.com/mickcarey/AR-Touchpad).
 - **Shizuku:** [shizuku.rikka.app](https://shizuku.rikka.app/), providing the privileged service connection.
 - **Settings palette:** dark ink, teal, and amber adapted from [Vanilla8](https://vanilla8.com/).
 
