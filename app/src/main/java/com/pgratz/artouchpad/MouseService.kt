@@ -31,15 +31,64 @@ import android.view.MotionEvent
  * Shell uid is in the `input` group and has rw access to /dev/uinput, so no
  * additional permissions are needed beyond what Shizuku already grants.
  */
-class MouseService : IMouseService.Stub() {
+class MouseService(context: android.content.Context) : IMouseService.Stub() {
 
-    private var displayId = android.view.Display.DEFAULT_DISPLAY
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val modeFeedback = ModeFeedbackOverlay(mainHandler)
+    private val cursorFeedback = CursorFeedback()
+    private val cursorVisibility by lazy {
+        runCatching {
+            val method = imgClass!!.getMethod("setPointerIcon", android.view.PointerIcon::class.java,
+                Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+                android.os.IBinder::class.java)
+            CursorVisibility(context, mainHandler) { icon, display, device, token ->
+                method.invoke(imgInstance, icon, display, device, 0, token) == true
+            }
+        }.onFailure { Log.w(TAG, "Icon visibility unsupported; using device removal", it) }.getOrNull()
+    }
+
+    private fun updateCursorVisibility() {
+        val target = displayId
+        val device = findUinputDevice()?.id ?: -1
+        mainHandler.post {
+            if (target == displayId) runCatching {
+                cursorVisibility?.setHidden(pointerHidden, target, device)
+            }.onFailure { Log.w(TAG, "Cursor visibility unavailable", it) }
+        }
+    }
+
+    override fun showModeFeedback(badge: android.graphics.Bitmap) {
+        val target = displayId
+        mainHandler.post {
+            try {
+                if (target == displayId && target >= 0) {
+                    runCatching { modeFeedback.show(target, displayWidth, displayHeight, badge) }
+                    .onFailure { Log.w(TAG, "Mode feedback unavailable", it) }
+                }
+            } finally { badge.recycle() }
+        }
+    }
+
+    override fun dismissModeFeedback() {
+        cursorFeedback.cancel()
+        mainHandler.post { modeFeedback.dismiss() }
+    }
+
+    override fun setDragReady(ready: Boolean) {
+        // Native styling leaves icon selection entirely with the hovered app.
+        if (ready && !pointerHidden && readyTarget != null) cursorFeedback.pulse()
+        else cursorFeedback.cancel()
+    }
+
+    private var displayId = android.view.Display.INVALID_DISPLAY
+    @Volatile private var readyTarget: MouseDisplayTarget? = null
     private var displayWidth = 1920
     private var displayHeight = 1080
     private var cursorX = 960f
     private var cursorY = 540f
 
     private var uinputReady = false
+    @Volatile private var pointerHidden = false
     // Cached descriptor string for our uinput device; set after InputReader registers it.
     // Used by associateDeviceToDisplay() to pin the cursor to the external display.
     private var uinputDescriptor: String? = null
@@ -84,6 +133,9 @@ class MouseService : IMouseService.Stub() {
         runCatching {
             imgClass?.getMethod("getInputDevice", Int::class.javaPrimitiveType)
         }.getOrNull()
+    }
+    private val getAssociatedDisplayId by lazy {
+        runCatching { InputDevice::class.java.getMethod("getAssociatedDisplayId") }.getOrNull()
     }
     // Current AOSP association API (replaced setInputDeviceDisplayAssociation at some point
     // before Android 17): keyed by the display's uniqueId string rather than its integer id.
@@ -135,9 +187,8 @@ class MouseService : IMouseService.Stub() {
         }.getOrNull()
     }
 
-    init {
-        initUinput()
-    }
+    // Create the mouse only after an external display exists. A mouse registered
+    // before hotplug can retain the phone's pointer/display state in InputReader.
 
     // Opens /dev/uinput via JNI, declares mouse capabilities (REL_X/Y, wheel incl. hi-res, buttons),
     // writes the device name, and issues UI_DEV_CREATE. Waits 400 ms for InputReader to
@@ -179,19 +230,22 @@ class MouseService : IMouseService.Stub() {
             Log.i(TAG, "uinput device ready, descriptor=$uinputDescriptor")
         } catch (e: Exception) {
             Log.e(TAG, "initUinput failed: $e")
+        } finally {
+            if (!uinputReady) UinputNative.nClose()
         }
     }
 
     // Scans all registered input devices via InputManagerGlobal and returns the descriptor
     // of the one named "AR Touchpad Mouse". Returns null if not found or reflection fails.
-    private fun findUinputDescriptor(): String? = runCatching {
+    private fun findUinputDescriptor(): String? = findUinputDevice()?.descriptor
+
+    private fun findUinputDevice(): InputDevice? = runCatching {
         val instance = imgInstance ?: return@runCatching null
         val ids = imgGetDeviceIds?.invoke(instance) as? IntArray ?: return@runCatching null
         val getDevice = imgGetDevice ?: return@runCatching null
         ids.toList().mapNotNull { id ->
             (getDevice.invoke(instance, id) as? android.view.InputDevice)
                 ?.takeIf { it.name == "AR Touchpad Mouse" }
-                ?.descriptor
         }.firstOrNull()
     }.getOrNull()
 
@@ -214,9 +268,9 @@ class MouseService : IMouseService.Stub() {
     // uinput device was never actually pinned to the external display, so REL_X/REL_Y motion
     // moved a cursor on the wrong (invisible) display while BTN_LEFT clicks, which are
     // dispatched to the focused window rather than a device-associated display, still worked.
-    private fun associateDeviceToDisplay(descriptor: String, targetDisplayId: Int) {
+    private fun associateDeviceToDisplay(descriptor: String, targetDisplayId: Int): Boolean =
         runCatching {
-            val instance = imgInstance ?: return
+            val instance = imgInstance ?: return@runCatching false
             val uniqueId = getDisplayUniqueId(targetDisplayId)
 
             if (uniqueId != null) {
@@ -224,7 +278,7 @@ class MouseService : IMouseService.Stub() {
                 if (direct != null) {
                     direct.invoke(instance, descriptor, uniqueId)
                     Log.i(TAG, "associated uinput device to display $targetDisplayId ($uniqueId)")
-                    return
+                    return@runCatching true
                 }
                 val mImField = imgClass?.getDeclaredField("mIm")?.also { it.isAccessible = true }
                 val iim = mImField?.get(instance)
@@ -237,7 +291,7 @@ class MouseService : IMouseService.Stub() {
                 if (iim != null && viaBinder != null) {
                     viaBinder.invoke(iim, descriptor, uniqueId)
                     Log.i(TAG, "associated uinput device (via mIm) to display $targetDisplayId ($uniqueId)")
-                    return
+                    return@runCatching true
                 }
             }
 
@@ -245,12 +299,12 @@ class MouseService : IMouseService.Stub() {
             if (legacy != null) {
                 legacy.invoke(instance, descriptor, targetDisplayId)
                 Log.i(TAG, "associated uinput device to display $targetDisplayId (legacy API)")
-                return
+                return@runCatching true
             }
 
             Log.w(TAG, "no display-association API available (uniqueId=$uniqueId)")
-        }.onFailure { Log.w(TAG, "associateDeviceToDisplay failed: $it") }
-    }
+            false
+        }.getOrElse { Log.w(TAG, "associateDeviceToDisplay failed: $it"); false }
 
     // Writes a single struct input_event{type, code, value} to the open uinput fd via JNI.
     private fun ev(type: Int, code: Int, value: Int) = UinputNative.nWriteEvent(type, code, value)
@@ -262,6 +316,12 @@ class MouseService : IMouseService.Stub() {
     // move the cursor on the glasses screen instead of the phone screen. Sends a 1-px nudge
     // to wake the OS cursor on the new display.
     override fun setDisplay(id: Int, width: Int, height: Int) {
+        val target = MouseDisplayTarget(id, width, height)
+        if (isDisplayReady(id, width, height)) return
+        readyTarget = null
+        if (id == android.view.Display.DEFAULT_DISPLAY || id < 0 || width <= 0 || height <= 0) return
+        if (getDisplayUniqueId(id) == null) return // display is still being registered or was removed
+        if (displayId != id || displayWidth != width || displayHeight != height) clearDisplay()
         displayId = id
         displayWidth = width
         displayHeight = height
@@ -274,9 +334,18 @@ class MouseService : IMouseService.Stub() {
         detentUnitsX = 0
         detentUnitsY = 0
 
+        if (pointerHidden && cursorVisibility == null) {
+            // The display is usable for settings/gestures, but has no pointer while locked.
+            readyTarget = target
+            return
+        }
+
         // Pin the uinput device to this display so cursor movement lands on the glasses screen.
         // Without this, Android may default the virtual mouse to the phone's display on some setups.
-        uinputDescriptor?.let { associateDeviceToDisplay(it, id) }
+        if (!uinputReady) initUinput()
+        if (!uinputReady) return
+        val descriptor = uinputDescriptor ?: findUinputDescriptor()?.also { uinputDescriptor = it }
+        if (descriptor == null || !associateDeviceToDisplay(descriptor, id)) return
 
         // Nudge the pointer to wake the cursor.
         if (uinputReady) {
@@ -284,14 +353,75 @@ class MouseService : IMouseService.Stub() {
             Thread.sleep(50)
             ev(EV_REL, REL_X, -1); ev(EV_REL, REL_Y, -1); sync()
         }
+        readyTarget = target
+        updateCursorVisibility()
         Log.i(TAG, "setDisplay id=$id ${width}x${height} uinputReady=$uinputReady")
+    }
+
+    override fun isDisplayReady(id: Int, width: Int, height: Int): Boolean {
+        if (readyTarget != MouseDisplayTarget(id, width, height)) return false
+        if (pointerHidden && cursorVisibility == null) return true
+        val device = findUinputDevice() ?: return false
+        // InputReader applies the association asynchronously. A successful Binder call
+        // alone does not mean its cursor mapper has switched to the new display yet.
+        val method = getAssociatedDisplayId ?: return true // legacy API fallback
+        return runCatching { method.invoke(device) == id }.getOrDefault(false)
+    }
+
+    override fun setPointerHidden(hidden: Boolean) {
+        if (pointerHidden == hidden) return
+        pointerHidden = hidden
+        if (hidden) cursorFeedback.cancel()
+        if (cursorVisibility != null) {
+            // Keep the same registered device and display binding. Settings can accept the
+            // very next motion event; there is no recreation, registration sleep or retry.
+            if (hidden) mouseUp()
+            updateCursorVisibility()
+            return
+        }
+        if (hidden) {
+            // Releasing our own uinput device removes its system cursor without clicking,
+            // moving it off-screen, changing another mouse, or capturing app focus.
+            if (uinputReady) {
+                ev(EV_KEY, BTN_LEFT, 0)
+                ev(EV_KEY, BTN_RIGHT, 0)
+                sync()
+            }
+            UinputNative.nClose()
+            uinputReady = false
+            uinputDescriptor = null
+        } else if (displayId >= 0) {
+            // InputManager may briefly still list the just-removed device. Force creation
+            // on the compatibility path instead of accepting that stale readiness result.
+            readyTarget = null
+            setDisplay(displayId, displayWidth, displayHeight)
+        }
+    }
+
+    override fun clearDisplay() {
+        dismissModeFeedback()
+        mainHandler.post { cursorVisibility?.restore() }
+        readyTarget = null
+        if (uinputReady) {
+            ev(EV_KEY, BTN_LEFT, 0)
+            ev(EV_KEY, BTN_RIGHT, 0)
+            sync()
+        }
+        UinputNative.nClose()
+        uinputReady = false
+        uinputDescriptor = null
+        displayId = android.view.Display.INVALID_DISPLAY
+        accumX = 0f; accumY = 0f
+        accumScrollX = 0f; accumScrollY = 0f
+        detentUnitsX = 0; detentUnitsY = 0
+        Log.i(TAG, "external display detached; virtual mouse released")
     }
 
     // Accumulates fractional deltas in accumX/Y; only emits REL_X/REL_Y events for the
     // whole-pixel portion, carrying the remainder forward. Also clamps the tracked cursor
     // position to the display bounds so the ViewModel overlay stays in sync.
     override fun moveMouse(dx: Float, dy: Float) {
-        if (!uinputReady) return
+        if (pointerHidden || !uinputReady || readyTarget == null) return
         accumX += dx
         accumY += dy
         val idx = accumX.toInt()
@@ -304,16 +434,14 @@ class MouseService : IMouseService.Stub() {
         ev(EV_REL, REL_X, idx)
         ev(EV_REL, REL_Y, idy)
         sync()
-        Log.v(TAG, "moveMouse rel=($idx,$idy) displayId=$displayId")
     }
 
-    // Presses (value=1) then releases (value=0) BTN_LEFT or BTN_RIGHT with a 50 ms hold.
+    // Separate SYN_REPORT frames preserve down/up without holding up later motion.
     // x/y are accepted for interface symmetry but cursor position is already tracked by moveMouse.
     override fun click(x: Float, y: Float, button: Int) {
-        if (!uinputReady) return
+        if (pointerHidden || !uinputReady || readyTarget == null) return
         val btn = if (button == MotionEvent.BUTTON_SECONDARY) BTN_RIGHT else BTN_LEFT
         ev(EV_KEY, btn, 1); sync()
-        Thread.sleep(50)
         ev(EV_KEY, btn, 0); sync()
         Log.d(TAG, "click btn=0x${btn.toString(16)} displayId=$displayId")
     }
@@ -323,6 +451,7 @@ class MouseService : IMouseService.Stub() {
     // InputEvent.setDisplayId reflection, then calls InputManagerGlobal.injectInputEvent so
     // the key reaches the focused window on the glasses display rather than the phone.
     override fun pressKey(androidKeycode: Int) {
+        if (pointerHidden || readyTarget == null) return
         val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
         val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
         val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
@@ -345,6 +474,7 @@ class MouseService : IMouseService.Stub() {
     // KeyCharacterMap.VIRTUAL_KEYBOARD; falls back to per-character conversion for strings
     // that can't be mapped in one shot (e.g. mixed scripts). Delegates to injectKeyEvents.
     override fun typeText(text: String) {
+        if (pointerHidden || readyTarget == null) return
         val kcm = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD)
         val events = kcm.getEvents(text.toCharArray())
         if (events != null) {
@@ -385,7 +515,7 @@ class MouseService : IMouseService.Stub() {
     // hi-res units has accumulated: InputReader uses the hi-res axis and ignores the legacy
     // one when the device declares both, and builds without hi-res support do the reverse.
     override fun scroll(dx: Float, dy: Float) {
-        if (!uinputReady) return
+        if (pointerHidden || !uinputReady || readyTarget == null) return
         accumScrollX += dx * HI_RES_UNITS_PER_PX
         accumScrollY += dy * HI_RES_UNITS_PER_PX
         val unitsX = accumScrollX.toInt()
@@ -450,6 +580,7 @@ class MouseService : IMouseService.Stub() {
     // Moonlight tracks individual modifier key events, then toggles capture once all
     // modifiers are released. A Z event with meta flags alone does not trigger it.
     override fun toggleMoonlightCapture() {
+        if (pointerHidden || readyTarget == null) return
         val instance = imgInstance ?: return
         val inject = imgInjectEvent ?: return
         val setDisp = setDisplayIdMethod ?: return
@@ -491,6 +622,7 @@ class MouseService : IMouseService.Stub() {
     // with META_CTRL_ON|META_CTRL_LEFT_ON so apps see a real Ctrl+key shortcut.
     // Used for Copy/Cut/Paste/SelectAll after a text selection without moving the cursor.
     override fun pressKeyWithCtrl(keycode: Int) {
+        if (pointerHidden || readyTarget == null) return
         val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
         val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
         val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
@@ -521,6 +653,7 @@ class MouseService : IMouseService.Stub() {
     // tracked cursor position. Chrome and WebView-based apps zoom their page content in response;
     // positive amount = zoom in, negative = zoom out. Does not affect the system font scale.
     override fun ctrlScroll(amount: Float) {
+        if (pointerHidden || readyTarget == null) return
         val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
         val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
         val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
@@ -552,7 +685,7 @@ class MouseService : IMouseService.Stub() {
     // Presses BTN_LEFT without releasing — the paired mouseUp() call ends the drag.
     // Used for text selection: button held while moveMouse moves the cursor.
     override fun mouseDown() {
-        if (!uinputReady) return
+        if (pointerHidden || !uinputReady || readyTarget == null) return
         ev(EV_KEY, BTN_LEFT, 1); sync()
         Log.d(TAG, "mouseDown displayId=$displayId")
     }
@@ -567,8 +700,12 @@ class MouseService : IMouseService.Stub() {
     // Closes the uinput file descriptor via JNI (sends UI_DEV_DESTROY internally) and marks
     // the device unavailable so subsequent calls are no-ops rather than crashing.
     override fun destroy() {
+        readyTarget = null
         UinputNative.nClose()
         uinputReady = false
+        // A Shizuku UserService is an app_process, not an Android Service. Closing
+        // uinput alone leaves its VM/Binder threads alive after every replacement.
+        kotlin.system.exitProcess(0)
     }
 
     companion object {

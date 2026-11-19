@@ -18,8 +18,19 @@ import android.content.ComponentName
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
 class ShizukuMouseController {
@@ -28,10 +39,19 @@ class ShizukuMouseController {
         private set
 
     private var service: IMouseService? = null
+    private var pointerHidden = false
     private var onStateChanged: (() -> Unit)? = null
-    private var lastMoveMs = 0L
-    private var pendingDx = 0f
-    private var pendingDy = 0f
+    private val motionHandler = Handler(Looper.getMainLooper())
+    private val movement = MotionBatcher(
+        now = SystemClock::uptimeMillis,
+        schedule = { task, delay -> motionHandler.postDelayed(task, delay); Unit },
+        cancel = { motionHandler.removeCallbacks(it) },
+        send = { dx, dy -> runCatching { service?.moveMouse(dx, dy) }; Unit },
+    )
+    private val displayBinding = DisplayBinding()
+    private val connectionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var displayJob: Job? = null
+    val isDisplayReady get() = displayBinding.isReady
     private var lastScrollMs = 0L
     private var pendingScrollX = 0f
     private var pendingScrollY = 0f
@@ -41,15 +61,25 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(19)  // adds Moonlight capture shortcut to the service interface
+        .version(30)  // hold native colour until drag-ready ends; brief upward size pulse
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            // Shizuku can report an already-connected service again. Keep its motion
+            // state and display association instead of resetting a live pointer.
+            if (isConnected && service?.asBinder() == binder) return
+            displayJob?.cancel()
+            displayBinding.invalidate()
+            resetPendingInput()
             service = IMouseService.Stub.asInterface(binder)
-            isConnected = true
+            runCatching { service?.setPointerHidden(pointerHidden) }
+            isConnected = service != null
             onStateChanged?.invoke()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
+            displayJob?.cancel()
+            displayBinding.invalidate()
+            resetPendingInput()
             service = null
             isConnected = false
             onStateChanged?.invoke()
@@ -71,6 +101,7 @@ class ShizukuMouseController {
     // Unregisters the permission listener and unbinds (and destroys) the UserService.
     fun destroy() {
         Shizuku.removeRequestPermissionResultListener(permissionListener)
+        connectionScope.cancel()
         unbind()
     }
 
@@ -96,7 +127,10 @@ class ShizukuMouseController {
 
     // Sends destroy + unbind to Shizuku and clears the local service reference.
     fun unbind() {
-        if (isConnected) runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
+        displayJob?.cancel()
+        displayBinding.invalidate()
+        resetPendingInput()
+        runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
         service = null
         isConnected = false
     }
@@ -104,40 +138,87 @@ class ShizukuMouseController {
     // Forwards display id and pixel dimensions to MouseService so it can target
     // cursor and key events at the correct display.
     fun setDisplay(displayId: Int, width: Int, height: Int) {
-        runCatching { service?.setDisplay(displayId, width, height) }
+        val target = MouseDisplayTarget(displayId, width, height)
+        if (displayBinding.select(target)) {
+            displayJob?.cancel()
+            resetPendingInput()
+        }
+        if (displayBinding.isReady || displayJob?.isActive == true) return
+        val connected = service ?: return
+        val revision = displayBinding.revision
+        displayJob = connectionScope.launch {
+            var retryDelay = 250L
+            while (isActive) {
+                // Creation and association run in the service, never on the UI thread.
+                val ready = runCatching {
+                    connected.setDisplay(target.id, target.width, target.height)
+                    withContext(Dispatchers.IO) {
+                        connected.isDisplayReady(target.id, target.width, target.height)
+                    }
+                }.getOrDefault(false)
+                if (ready && service === connected && displayBinding.markReady(revision)) {
+                    onStateChanged?.invoke()
+                    return@launch
+                }
+                // Display/input registration can lag the hotplug notification. Back off
+                // while waiting, and cancel immediately when the target disappears.
+                delay(retryDelay)
+                retryDelay = (retryDelay * 2).coerceAtMost(2000L)
+            }
+        }
     }
+
+    fun clearDisplay() {
+        val changed = displayBinding.select(null)
+        displayJob?.cancel()
+        displayJob = null
+        resetPendingInput()
+        if (changed) runCatching { service?.clearDisplay() }
+    }
+
+    fun setPointerHidden(hidden: Boolean) {
+        if (pointerHidden == hidden) return
+        pointerHidden = hidden
+        resetPendingInput()
+        runCatching { service?.setPointerHidden(hidden) }
+        // Visibility does not change the target or readiness. The next movement can be
+        // sent immediately, ordered after this call on the same Binder.
+    }
+
+    fun showModeFeedback(badge: android.graphics.Bitmap) { runCatching { service?.showModeFeedback(badge) } }
+    fun dismissModeFeedback() { runCatching { service?.dismissModeFeedback() } }
+    fun setDragReady(ready: Boolean) { runCatching { service?.setDragReady(ready) } }
 
     // Rate-limits IPC to ~60 Hz but accumulates deltas so no motion is lost between
     // allowed frames. Without accumulation, high-Hz touch input (90/120 Hz) would
     // silently drop half the events, causing jitter on slow/precise movements.
     fun moveMouse(dx: Float, dy: Float) {
-        pendingDx += dx
-        pendingDy += dy
-        val now = System.currentTimeMillis()
-        if (now - lastMoveMs < 16L) return
-        lastMoveMs = now
-        val sendX = pendingDx; val sendY = pendingDy
-        pendingDx = 0f; pendingDy = 0f
-        runCatching { service?.moveMouse(sendX, sendY) }
+        if (isDisplayReady) movement.add(dx, dy)
+    }
+
+    fun flushMovement() = movement.flush()
+
+    fun cancelPendingInput() = resetPendingInput()
+
+    private fun resetPendingInput() {
+        movement.reset()
+        pendingScrollX = 0f
+        pendingScrollY = 0f
+        lastScrollMs = 0L
     }
 
     // Single left-click at the current cursor position.
     fun click(x: Float, y: Float) {
+        if (!isDisplayReady) return
+        flushMovement()
         runCatching { service?.click(x, y, MotionEvent.BUTTON_PRIMARY) }
     }
 
     // Single right-click (long-press gesture on touchscreens) at the current cursor position.
     fun rightClick(x: Float, y: Float) {
+        if (!isDisplayReady) return
+        flushMovement()
         runCatching { service?.click(x, y, MotionEvent.BUTTON_SECONDARY) }
-    }
-
-    // Two left-clicks separated by a 120 ms sleep to satisfy double-click timing thresholds.
-    fun doubleClick(x: Float, y: Float) {
-        runCatching {
-            service?.click(x, y, MotionEvent.BUTTON_PRIMARY)
-            Thread.sleep(120)
-            service?.click(x, y, MotionEvent.BUTTON_PRIMARY)
-        }
     }
 
     // Forwards scroll deltas (finger pixels) to MouseService for wheel conversion, paced like
@@ -182,9 +263,9 @@ class ShizukuMouseController {
     }
 
     // Presses BTN_LEFT without releasing — call moveMouse while held for click-drag selection.
-    fun mouseDown() { runCatching { service?.mouseDown() } }
+    fun mouseDown() { flushMovement(); runCatching { service?.mouseDown() } }
     // Releases BTN_LEFT pressed by mouseDown().
-    fun mouseUp()   { runCatching { service?.mouseUp() } }
+    fun mouseUp()   { flushMovement(); runCatching { service?.mouseUp() } }
 
     // Injects Ctrl+keycode (e.g. KEYCODE_C for Copy) without moving the cursor.
     fun pressKeyWithCtrl(keycode: Int) { runCatching { service?.pressKeyWithCtrl(keycode) } }
