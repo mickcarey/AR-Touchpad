@@ -13,6 +13,8 @@
 
 Turn your Android phone into a fullscreen trackpad for AR glasses or an external desktop display. Point, scroll, type, and settle in for a film with the phone tucked away in Pocket mode.
 
+**👓 Works with XREAL One Pro.** This fork is developed and tested primarily with **XREAL One Pro glasses connected to a Pixel 9**—the everyday setup behind these features and fixes.
+
 **Built on [AR Touchpad by Paul Gratz](https://github.com/pgratz1/AR-Touchpad).** The original project supplies the foundation: a real Android system cursor, a Shizuku-powered virtual mouse, and touchpad gestures for an extended display. This [fork by mickcarey](https://github.com/mickcarey/Android-Touchpad) builds on that work with fullscreen controls, Pocket mode, external settings, orientation calibration, and reliability improvements. Thank you, Paul! 💛
 
 **Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/Android-Touchpad/fork), tweak it, and make it fit your own workflow!
@@ -86,7 +88,7 @@ Fixes and refinements made while developing this fork:
 | **Drag feedback replacing text-selection cursors** | Native colour and size feedback preserves the app's chosen cursor shape. Release and cancellation restore the original style. |
 | **Unnecessary background work** | Guard duplicate service connections, cache unchanged display targets, simplify idle timing, and clean up mouse/service resources on disconnect. |
 
-This fork has been exercised on **Pixel 9 + XREAL One Pro**; the [original project](https://github.com/pgratz1/AR-Touchpad) reports testing on **Pixel 10 + Viture XR Pro**. Compatibility with other phones and displays depends on their desktop-mode and input support.
+The main development and testing setup for this fork is **Pixel 9 + XREAL One Pro**. The [original project](https://github.com/pgratz1/AR-Touchpad) reports testing on **Pixel 10 + Viture XR Pro**. Compatibility with other phones and displays depends on their desktop-mode and input support.
 
 ## 🚀 Get going
 
