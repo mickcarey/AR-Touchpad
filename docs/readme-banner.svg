@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">AR Touchpad</title>
+  <desc id="desc">Small screen. Big possibilities. A colourful phone and external display on a dark ink background.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1">
+      <stop stop-color="#111b2e"/>
+      <stop offset="1" stop-color="#20354a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#background)"/>
+  <circle cx="1160" cy="10" r="220" fill="#65d6d1" opacity=".06"/>
+  <circle cx="800" cy="380" r="150" fill="#ffbe63" opacity=".06"/>
+  <rect x="54" y="49" width="42" height="5" rx="2.5" fill="#65d6d1"/>
+  <text x="54" y="112" fill="#f2f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="700">AR Touchpad</text>
+  <text x="56" y="165" fill="#65d6d1" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="600">Small screen. Big possibilities.</text>
+  <text x="56" y="210" fill="#b7c8d8" font-family="Segoe UI, Arial, sans-serif" font-size="19">Your phone becomes the trackpad.</text>
+  <text x="56" y="239" fill="#b7c8d8" font-family="Segoe UI, Arial, sans-serif" font-size="19">Your glasses become the desktop.</text>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1">
+    <rect x="56" y="278" width="140" height="32" rx="16" fill="#65d6d1"/>
+    <text x="126" y="299" text-anchor="middle" fill="#111b2e">POINT + PLAY</text>
+    <rect x="208" y="278" width="144" height="32" rx="16" fill="#ffbe63"/>
+    <text x="280" y="299" text-anchor="middle" fill="#111b2e">POCKET + GO</text>
+  </g>
+  <rect x="800" y="65" width="326" height="203" rx="17" fill="#0d1525" stroke="#65d6d1" stroke-width="3"/>
+  <rect x="817" y="82" width="292" height="169" rx="8" fill="#1b3042"/>
+  <path d="M817 210 Q895 140 965 205 T1109 165 V243 Q1109 251 1101 251 H825 Q817 251 817 243Z" fill="#65d6d1" opacity=".13"/>
+  <path d="M953 118 L953 186 L970 169 L985 197 L999 189 L984 163 L1008 163Z" fill="#ffbe63" stroke="#0d1525" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M943 270 V287 H919 M943 287 H991" fill="none" stroke="#65d6d1" stroke-width="4" stroke-linecap="round"/>
+  <g transform="rotate(-12 738 207)">
+    <rect x="681" y="99" width="114" height="218" rx="23" fill="#0d1525" stroke="#8b9cb4" stroke-width="3"/>
+    <rect x="692" y="112" width="92" height="190" rx="15" fill="#080e19"/>
+    <rect x="724" y="120" width="28" height="5" rx="2.5" fill="#354960"/>
+    <circle cx="738" cy="215" r="25" fill="#65d6d1" opacity=".1"/>
+    <circle cx="738" cy="215" r="14" fill="none" stroke="#65d6d1" stroke-width="2"/>
+    <path d="M738 209 V179 M730 187 L738 179 L746 187" fill="none" stroke="#65d6d1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <path d="M781 84 Q798 42 845 42" fill="none" stroke="#65d6d1" stroke-width="3" stroke-dasharray="5 8" stroke-linecap="round"/>
+  <circle cx="1140" cy="301" r="5" fill="#ffbe63"/>
+  <path d="M1097 302 H1113 M1105 294 V310" stroke="#65d6d1" stroke-width="2" stroke-linecap="round"/>
+</svg>

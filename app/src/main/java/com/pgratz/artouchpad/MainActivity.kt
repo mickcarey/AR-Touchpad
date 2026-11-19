@@ -17,6 +17,7 @@ package com.pgratz.artouchpad
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.hardware.display.DisplayManager
 import android.util.Log
 import android.view.KeyEvent
@@ -69,6 +70,8 @@ class MainActivity : ComponentActivity() {
     private val idleHandler = Handler(Looper.getMainLooper())
     private var isDimmed by mutableStateOf(false)
     private var pointerDown = false
+    private var lastInteractionMs = 0L
+    private var dimScheduled = false
     private var settingsPresentation: SettingsPresentation? = null
     private var settingsOnPhone by mutableStateOf(false)
 
@@ -80,11 +83,18 @@ class MainActivity : ComponentActivity() {
     // dimming out from under an in-flight gesture.
     private val dimRunnable = object : Runnable {
         override fun run() {
+            dimScheduled = false
+            val remaining = dimDelayMs - (SystemClock.uptimeMillis() - lastInteractionMs)
+            if (remaining > 0) {
+                scheduleDim(remaining)
+                return
+            }
             if (pointerDown) {
                 scheduleDim()
                 return
             }
             isDimmed = true
+            updateSystemBars()
         }
     }
 
@@ -110,11 +120,15 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state.map {
-                    Triple(it.mouseReady, it.targetDisplay?.id, it.showSettings)
-                }.distinctUntilChanged().collect { (mouseReady, displayId, showSettings) ->
-                    if (!showSettings || !mouseReady) dismissSettingsPresentation()
-                    settingsOnPhone = showSettings && (!mouseReady || !showSettingsOnDisplay(displayId))
-                    val trackpadActive = mouseReady && displayId != null && !settingsOnPhone
+                    Triple(it.mouseReady to it.settingsRequirePhone, it.targetDisplay?.id,
+                        it.showSettings to it.calibratingOrientation)
+                }.distinctUntilChanged().collect { (readiness, displayId, phoneUi) ->
+                    val (showSettings, calibrating) = phoneUi
+                    val (mouseReady, requirePhone) = readiness
+                    if (!showSettings || requirePhone) dismissSettingsPresentation()
+                    settingsOnPhone = showSettings && (requirePhone || !showSettingsOnDisplay(displayId))
+                    val trackpadActive = mouseReady && displayId != null && !settingsOnPhone && !calibrating
+                    if (calibrating) noteInteraction()
                     val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
                     // ALT_FOCUSABLE_IM keeps this non-focusable window below the phone
@@ -129,6 +143,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state.map { it.dimDelaySec }.distinctUntilChanged().collect {
+                    idleHandler.removeCallbacks(dimRunnable)
+                    dimScheduled = false
                     noteInteraction()
                 }
             }
@@ -140,10 +156,37 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     viewModel.state.map { it.targetDisplay?.id }.distinctUntilChanged().collect {
+                        viewModel.mouse.dismissModeFeedback()
                         glassesWakeLock.holdFor(it)
                     }
                 } finally {
                     glassesWakeLock.release()
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.dragReadyChanges.collect { ready ->
+                    viewModel.mouse.setDragReady(ready)
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pocketModeChanges.collect { locked ->
+                    val displayId = viewModel.state.value.targetDisplay?.id
+                    val display = displayId?.let { getSystemService(DisplayManager::class.java).getDisplay(it) }
+                    if (display != null) {
+                        val badge = modeFeedbackBadge(locked, createDisplayContext(display).resources.displayMetrics.density)
+                        try { viewModel.mouse.showModeFeedback(badge) } finally { badge.recycle() }
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.state.map { it.blackTouchpad to it.pocketInputLocked }.distinctUntilChanged().collect {
+                    updateSystemBars()
                 }
             }
         }
@@ -156,7 +199,7 @@ class MainActivity : ComponentActivity() {
                     // Phone-side recovery/settings must remain visible when disconnected.
                     val blackPad = state.blackTouchpad && state.mouseReady &&
                         state.externalDisplayConnected && !settingsOnPhone
-                    if (isDimmed || blackPad) {
+                    if ((isDimmed || blackPad) && !state.calibratingOrientation) {
                         // Draw-only overlay: no pointerInput modifier, so touches fall
                         // straight through to the touchpad surface underneath and the
                         // gesture that wakes the screen still counts as a gesture.
@@ -173,8 +216,19 @@ class MainActivity : ComponentActivity() {
 
     private fun updateSystemBars() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (settingsOnPhone) show(WindowInsetsCompat.Type.systemBars())
+            // Unlike sticky immersive mode, DEFAULT allows Home/Overview gestures
+            // directly while the navigation bar is hidden.
+            val state = viewModel.state.value
+            systemBarsBehavior = if (state.pocketInputLocked && !settingsOnPhone)
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            isAppearanceLightNavigationBars = false
+            val blackPad = state.blackTouchpad && state.mouseReady &&
+                state.externalDisplayConnected && !settingsOnPhone
+            // System bars live outside the Compose scrim. If Android transiently reveals
+            // the status bar over a dark pad, avoid a bright header on an otherwise black phone.
+            isAppearanceLightStatusBars = !settingsOnPhone && !state.calibratingOrientation && (blackPad || isDimmed)
+            if (settingsOnPhone || state.calibratingOrientation) show(WindowInsetsCompat.Type.systemBars())
             else hide(WindowInsetsCompat.Type.systemBars())
         }
     }
@@ -238,16 +292,21 @@ class MainActivity : ComponentActivity() {
 
     // Clears the scrim if present and restarts the idle countdown. Runs on every touch
     // event (~120 Hz during a drag), so it stays cheap: state is only written on an actual
-    // dim→bright transition, otherwise this is just a handler re-post.
+    // dim→bright transition. The deadline checks the timestamp, avoiding handler churn.
     private fun noteInteraction() {
-        isDimmed = false
-        scheduleDim()
+        lastInteractionMs = SystemClock.uptimeMillis()
+        if (isDimmed) {
+            isDimmed = false
+            updateSystemBars()
+        }
+        if (!dimScheduled) scheduleDim()
     }
 
-    private fun scheduleDim() {
-        idleHandler.removeCallbacks(dimRunnable)
-        val delay = dimDelayMs
-        if (delay > 0) idleHandler.postDelayed(dimRunnable, delay)
+    private fun scheduleDim(delay: Long = dimDelayMs) {
+        if (delay > 0) {
+            dimScheduled = true
+            idleHandler.postDelayed(dimRunnable, delay)
+        }
     }
 
     // Re-checks display and Shizuku state when returning from Settings or the permission
@@ -264,17 +323,20 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         idleHandler.removeCallbacks(dimRunnable)
+        dimScheduled = false
         isDimmed = false
         pointerDown = false
     }
 
     override fun onStop() {
+        viewModel.mouse.dismissModeFeedback()
         dismissSettingsPresentation()
         viewModel.closeSettings()
         super.onStop()
     }
 
     override fun onDestroy() {
+        viewModel.mouse.dismissModeFeedback()
         dismissSettingsPresentation()
         super.onDestroy()
     }

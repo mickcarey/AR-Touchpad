@@ -52,10 +52,14 @@ internal fun SettingsPanel(
     scrollSpeed: Float,
     naturalScroll: Boolean,
     axisRotation: AxisRotation,
+    calibratedRotationDegrees: Float?,
+    calibratingOrientation: Boolean,
+    onCalibrate: () -> Unit,
     dimDelaySec: Int,
     blackTouchpad: Boolean,
+    pocketMode: Boolean,
     dexKeyboard: Boolean,
-    dexKeyboardActive: Boolean,
+    dexKeyboardError: Boolean,
     allDisplays: List<DisplayInfo>,
     targetDisplay: DisplayInfo?,
     onSensitivity: (Float) -> Unit,
@@ -64,6 +68,7 @@ internal fun SettingsPanel(
     onAxisRotation: (AxisRotation) -> Unit,
     onDimDelay: (Int) -> Unit,
     onBlackTouchpad: (Boolean) -> Unit,
+    onPocketMode: (Boolean) -> Unit,
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     connectionControls: @Composable () -> Unit,
@@ -97,10 +102,16 @@ internal fun SettingsPanel(
                                     SpeedSetting("Cursor speed", sensitivity, 0.4f..2f, onSensitivity)
                                     SpeedSetting("Scroll speed", scrollSpeed, 0.3f..1.3f, onScrollSpeed)
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                    SettingsChoice("Phone orientation", axisRotationLabel(axisRotation),
-                                        "Rotate cursor movement and two-finger scrolling.",
+                                    SettingsChoice("Phone orientation", calibratedRotationDegrees?.let(::calibratedRotationLabel)
+                                        ?: axisRotationLabel(axisRotation),
+                                        if (calibratedRotationDegrees != null) "Choose a preset to replace calibration."
+                                        else "Rotate cursor movement and two-finger scrolling.",
                                         AxisRotation.entries.map { it to axisRotationLabel(it) }, onAxisRotation)
-                                    SupportingText(when (axisRotation) {
+                                    OutlinedButton(onClick = onCalibrate, enabled = !calibratingOrientation) {
+                                        Text(if (calibratingOrientation) "Follow the swipes on your phone"
+                                            else if (calibratedRotationDegrees != null) "Recalibrate" else "Calibrate")
+                                    }
+                                    if (calibratedRotationDegrees == null) SupportingText(when (axisRotation) {
                                         AxisRotation.NONE -> "Swipe right → cursor moves right"
                                         AxisRotation.CLOCKWISE_45 -> "Swipe right → cursor moves down-right"
                                         AxisRotation.CLOCKWISE_90 -> "Swipe right → cursor moves down"
@@ -114,11 +125,14 @@ internal fun SettingsPanel(
                             val display: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                     SettingsSection("Phone & keyboard", "Keep the touchpad comfortable to use") {
+                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens settings.", pocketMode, onPocketMode)
                                         ToggleSetting("Black touchpad", "Keep the phone completely black while using the pad.", blackTouchpad, onBlackTouchpad)
                                         if (!blackTouchpad) SettingsChoice("Dim phone after", dimDelayLabel(dimDelaySec),
                                             "Only dims the phone. External display stays bright.",
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
-                                        else SupportingText("Touch and edge swipes stay active. Settings stay on your external display.")
+                                        else SupportingText(if (pocketMode)
+                                            "The pad stays black. Settings and unlock gestures stay active."
+                                        else "Touch and edge swipes stay active. Settings stay on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -128,10 +142,11 @@ internal fun SettingsPanel(
                                                 label = { Text("Phone") })
                                         }
                                         SupportingText(when {
-                                            !dexKeyboard -> "Use the cursor to click keys on your external display."
-                                            dexKeyboardActive -> "Type on the phone for text fields on your external display."
-                                            targetDisplay != null -> "Phone keyboard isn't supported here. The keyboard opens on the external display."
-                                            else -> "Connect an external display to use this option."
+                                            pocketMode -> "Keyboard stays off the phone while locked."
+                                            !dexKeyboard -> "Keyboard opens on the external display."
+                                            targetDisplay == null -> "Connect an external display first."
+                                            dexKeyboardError -> "Phone keyboard unavailable on this display."
+                                            else -> "Keyboard opens on the phone."
                                         })
                                     }
                                 }
@@ -265,6 +280,8 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             "Two-finger drag" to "Scroll",
                             "Two-finger pinch" to "Zoom page",
                             "Three-finger tap" to "Toggle Moonlight capture",
+                            "Four-finger tap" to "Open settings",
+                            "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
                         ).forEach { (gesture, action) ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                                 Text(gesture, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -273,7 +290,8 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("To reopen settings: swipe across most of the phone's top or bottom edge in portrait, in either direction. This stays the same for every cursor rotation.")
+                        SupportingText("Settings fallback: swipe across most of the phone's top or bottom edge in either direction.")
+                        SupportingText("Four-finger gestures work while locked. Settings open on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
                     }
                     SettingsSection("Displays", accent = Color(0xFF55732B)) {
                         if (allDisplays.isEmpty()) SupportingText("No displays detected.")
