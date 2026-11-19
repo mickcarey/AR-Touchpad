@@ -41,7 +41,8 @@ extern "C" {
 // Must be called before any other nXxx functions.
 JNIEXPORT jint JNICALL
 Java_com_pgratz_artouchpad_UinputNative_nOpen(JNIEnv*, jclass) {
-    g_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    if (g_fd >= 0) return g_fd;
+    g_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (g_fd < 0) LOGE("open /dev/uinput failed errno=%d", errno);
     else          LOGI("opened /dev/uinput fd=%d", g_fd);
     return g_fd;
@@ -75,9 +76,10 @@ Java_com_pgratz_artouchpad_UinputNative_nWriteDevInfo(JNIEnv* env, jclass, jstri
     dev.id.vendor  = 0x1234;
     dev.id.product = 0x5678;
     dev.id.version = 1;
-    ssize_t n = write(g_fd, &dev, sizeof(dev));
+    ssize_t n;
+    do { n = write(g_fd, &dev, sizeof(dev)); } while (n < 0 && errno == EINTR);
     if (n < 0) LOGE("write dev info failed errno=%d", errno);
-    return (jint)n;
+    return n == sizeof(dev) ? (jint)n : -1;
 }
 
 // Hot-path function: writes a single struct input_event{type, code, value} to g_fd.
@@ -95,9 +97,10 @@ Java_com_pgratz_artouchpad_UinputNative_nWriteEvent(JNIEnv*, jclass, jint type, 
     ev.type    = (uint16_t)type;
     ev.code    = (uint16_t)code;
     ev.value   = (int32_t)value;
-    ssize_t n  = write(g_fd, &ev, sizeof(ev));
+    ssize_t n;
+    do { n = write(g_fd, &ev, sizeof(ev)); } while (n < 0 && errno == EINTR);
     if (n < 0) LOGE("writeEvent(%d,%d,%d) failed errno=%d", type, code, value, errno);
-    return (jint)n;
+    return n == sizeof(ev) ? (jint)n : -1;
 }
 
 // Sends UI_DEV_DESTROY to unregister the virtual device from the Linux input subsystem,

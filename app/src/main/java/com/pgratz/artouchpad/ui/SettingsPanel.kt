@@ -72,8 +72,11 @@ internal fun SettingsPanel(
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     connectionControls: @Composable () -> Unit,
+    onSpeedFinished: () -> Unit,
+    extraControls: @Composable () -> Unit,
 ) {
     var showInfo by remember { mutableStateOf(false) }
+    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
     MaterialTheme(colorScheme = SettingsColors) {
         Box(Modifier.fillMaxSize()) {
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
@@ -99,8 +102,8 @@ internal fun SettingsPanel(
                             connectionControls()
                             val pointer: @Composable () -> Unit = {
                                 SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
-                                    SpeedSetting("Cursor speed", sensitivity, 0.4f..2f, onSensitivity)
-                                    SpeedSetting("Scroll speed", scrollSpeed, 0.3f..1.3f, onScrollSpeed)
+                                    SpeedSetting("Cursor speed", sensitivity, 0.2f..3f, onSensitivity, onSpeedFinished)
+                                    SpeedSetting("Scroll speed", scrollSpeed, 0.1f..2f, onScrollSpeed, onSpeedFinished)
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     SettingsChoice("Phone orientation", calibratedRotationDegrees?.let(::calibratedRotationLabel)
                                         ?: axisRotationLabel(axisRotation),
@@ -132,7 +135,7 @@ internal fun SettingsPanel(
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
                                         else SupportingText(if (pocketMode)
                                             "The pad stays black. Settings and unlock gestures stay active."
-                                        else "Touch and edge swipes stay active. Settings stay on your external display.")
+                                        else "Touch stays active. Four-finger tap opens settings on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -158,6 +161,7 @@ internal fun SettingsPanel(
                                 pointer()
                                 display()
                             }
+                            extraControls()
                         }
                     }
                 }
@@ -168,12 +172,12 @@ internal fun SettingsPanel(
 }
 
 @Composable
-private fun SupportingText(text: String) {
+internal fun SupportingText(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
-private fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
+internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
     content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -190,7 +194,7 @@ private fun SettingsSection(title: String, subtitle: String? = null, accent: Col
 }
 
 @Composable
-private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, onFinished: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
@@ -198,12 +202,12 @@ private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPoint
             Text("%.1f×".format(value), color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelLarge)
         }
-        Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
+        Slider(value = value.coerceIn(range), onValueChange = onChange, onValueChangeFinished = onFinished, valueRange = range)
     }
 }
 
 @Composable
-private fun ToggleSetting(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleSetting(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -215,7 +219,7 @@ private fun ToggleSetting(title: String, description: String, checked: Boolean, 
 }
 
 @Composable
-private fun <T> SettingsChoice(title: String, value: String, description: String,
+internal fun <T> SettingsChoice(title: String, value: String, description: String,
     options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -275,11 +279,11 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             "One-finger drag" to "Move cursor",
                             "One-finger tap / double-tap" to "Click / double-click",
                             "One-finger long-press" to "Right-click",
-                            "Long-press, then drag" to "Select text",
+                            "Long-press, then drag" to "Drag / select text",
                             "Two-finger tap" to "Right-click",
                             "Two-finger drag" to "Scroll",
                             "Two-finger pinch" to "Zoom page",
-                            "Three-finger tap" to "Toggle Moonlight capture",
+                            "Three-finger tap" to "Your chosen shortcut",
                             "Four-finger tap" to "Open settings",
                             "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
                         ).forEach { (gesture, action) ->
@@ -290,7 +294,6 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("Settings fallback: swipe across most of the phone's top or bottom edge in either direction.")
                         SupportingText("Four-finger gestures work while locked. Settings open on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
                     }
                     SettingsSection("Displays", accent = Color(0xFF55732B)) {

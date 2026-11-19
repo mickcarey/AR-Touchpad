@@ -5,6 +5,7 @@ project("artouchpad")
 # uinput_jni.cpp provides JNI bindings for /dev/uinput ioctl access — necessary
 # because Android 16 removed the generic Os.ioctl variant from the Kotlin API.
 add_library(artouchpad SHARED uinput_jni.cpp)
+target_link_options(artouchpad PRIVATE "-Wl,-z,max-page-size=16384")
 
 # android: NDK logging support (needed for __android_log_print).
 # log:     links liblog so LOGI/LOGE macros resolve at link time.

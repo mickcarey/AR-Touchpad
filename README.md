@@ -30,10 +30,21 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 | 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A responsive layout, teal-and-amber accents, and changes that save immediately. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
 | ✋ **Four-finger shortcuts** | Tap four fingers together for settings; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
-| 🎨 **Drag-ready feedback** | After a 600 ms hold, the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
+| 🎨 **Drag-ready feedback** | After a configurable hold (600 ms by default), the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
 | ⌨️ **Keyboard where you want it** | Keep the popup keyboard on the external display, or choose **Phone** to type there. Pocket mode suppresses the phone keyboard until you unlock. |
 | 🔌 **Connect in either order** | Open the app before or after plugging in the glasses. The mouse connects when the display appears and reconnects after an unplug/replug. |
 | 🌙 **Moonlight shortcut** | Three-finger tap sends Moonlight's mouse-capture toggle, so you can return control to Android without closing the stream. |
+
+### Profiles and input preferences
+
+- **Desktop, Moonlight, Movie:** load presets or save your current pointer, gesture, keyboard and black-touchpad preferences to a named profile. Pocket lock, connection state and calibration are not changed by profiles.
+- **Precision:** temporarily use 30% of your cursor speed. Smoothing can be Off, Light or Steady and is based on elapsed time rather than touch sampling rate.
+- **Copy after dragging:** off by default. Enable it for text-selection workflows. Cancellation always releases without copying.
+- **Drag lock:** optional; hold and drag, lift to reposition, then tap to release. Adding another finger cancels.
+- **Hold timing:** 300–1200 ms for right-click/drag readiness. Four-finger Pocket unlock remains 800 ms.
+- **Media:** play/pause, volume, rewind and forward controls. Seeking depends on the active player. A three-finger media shortcut is blocked while Pocket mode is locked.
+- **Display choice:** remember a display by its stable identity, with automatic fallback while it is absent.
+- **Recovery:** explicit connection status and Retry connection; Reset defaults clears preferences, profiles and calibration after an in-app confirmation.
 
 ### Pocket mode, without the faff
 
@@ -45,7 +56,7 @@ The phone stays awake: this is an input lock, not Android's screen lock. Android
 
 ### Calibration that fits your grip
 
-Choose **Phone orientation → Calibrate**, then swipe **up, down, up, down, up, down**, starting with up. Keep your finger down between directions or lift between strokes—both work. Save the result to use that angle for movement and two-finger scrolling.
+Choose **Phone orientation → Calibrate**, then swipe **up, down, up, down, up, down**, starting with up. Keep your finger down between directions or lift between strokes—both work. Test the resulting direction with the preview dot, then save the angle for movement and two-finger scrolling.
 
 Settings displays the actual **Calibrated** angle instead of labelling it as a nearby preset. Choosing a preset replaces the calibration; either choice survives restarts.
 
@@ -60,12 +71,12 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Hold for 600 ms, then move | Drag; the cursor's size pulse and colour change show when it's ready |
 | Move two fingers | Scroll |
 | Pinch / spread | Zoom out / in |
-| Three-finger tap, with Moonlight focused | Toggle mouse capture using `Ctrl+Alt+Shift+Z` |
+| Three-finger tap | Configurable: Moonlight capture (default), play/pause, precision, settings, or disabled |
 | Four-finger tap together | Open settings; also works in Pocket mode |
 | Four-finger hold for 0.8 seconds | Toggle Pocket mode |
 | Swipe up from the phone's bottom navigation edge | Android Home; swipe up and hold for the app switcher |
 
-**Settings swipe fallback:** swipe across roughly two-thirds of the phone's width along its top or bottom touchpad edge, then lift. Either direction works. Use the physical portrait edges regardless of cursor rotation; the bottom touchpad edge sits just above Android's navigation area.
+**Settings access:** four-finger tap opens settings. Edge swipes are ordinary cursor movement; they never open settings. When disconnected, use the visible Settings button.
 
 **Haptics are optional.** When system touch haptics are enabled, one pulse confirms locking and two confirm unlocking. Visual feedback also works with haptics off. The drag size pulse grows from your current native cursor size, up to Android's maximum; leave some room below maximum to see it.
 
@@ -114,24 +125,38 @@ Requires Android Studio with the Android SDK and NDK installed; JDK 17 is recomm
 git clone https://github.com/mickcarey/AR-Touchpad.git
 cd AR-Touchpad
 
-# Build the debug APK
-./gradlew assembleDebug
+# Stable local build
+./gradlew assembleProd
+./gradlew installProd
 
-# Or build and install on a connected phone
+# Independent development build
 ./gradlew installDebug
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\gradlew.bat assembleDebug
+.\gradlew.bat assembleProd
+.\gradlew.bat installProd
 .\gradlew.bat installDebug
 
 # Unit tests and Android lint
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug
 ```
 
-Unit tests cover rotation, calibration and continuous strokes, multi-finger gestures, settings-edge detection, motion batching, display readiness and stale setup results, Pocket-mode state, and cursor pulse planning. Also check external settings, keyboard routing, reconnects, and touchpad behaviour on a connected device.
+Prod and Debug install side by side:
+
+| Build | App ID | Launcher name |
+| --- | --- | --- |
+| Prod / release | `au.com.michaelcarey.artouchpad` | AR Touchpad Prod / AR Touchpad |
+| Debug | `au.com.michaelcarey.artouchpad.debug` | AR Touchpad Debug |
+| Benchmark | `au.com.michaelcarey.artouchpad.benchmark` | AR Touchpad Benchmark |
+
+Settings, Shizuku permissions and virtual-mouse identities are separate. Backgrounding an app releases its virtual mouse and restores its keyboard policy. The Kotlin/JNI namespace remains `com.pgratz.artouchpad`; application IDs and provider authorities use the new domain.
+
+`prod` is non-debuggable. It uses the configured release key when `KEYSTORE_PATH` is provided, otherwise the local debug key for personal installs. `release` still requires release signing credentials. Changing a signing key prevents updating an existing install; do not uninstall to work around it. The old `com.pgratz.artouchpad` app remains a separate installation when migrating to the new ID.
+
+Unit tests cover complete gesture sequences, input filtering and timing, profiles, display selection, key cleanup, keyboard-policy ownership, rotation, calibration, Pocket mode, and cursor pulse planning. Instrumentation tests exercise real preferences, settings UI, native mouse/zoom routing, cancellation, reconnect, failure recovery and keyboard routing on the connected device. See [testing and performance](docs/testing.md) for commands and measurement limits.
 
 <details>
 <summary><strong>📡 Wireless installation from Windows</strong></summary>
@@ -149,9 +174,10 @@ adb pair 192.168.1.10:37123
 .\scripts\install-wireless.ps1 -Launch
 ```
 
-The [installation script](scripts/install-wireless.ps1) finds `adb` on PATH or in the Android SDK, builds the debug APK, and installs with `adb install -r` to retain app data. It never automatically uninstalls an existing app.
+The [installation script](scripts/install-wireless.ps1) finds `adb` on PATH or in the Android SDK, builds the selected APK, and installs with `adb install -r` to retain app data. It never automatically uninstalls an existing app.
 
 - Use `-PairAddress IP:PAIR_PORT -Address IP:CONNECT_PORT` to pair and install in one invocation.
+- The script defaults to Prod. Use `-Variant debug` or `-Variant benchmark` for isolated builds.
 - Use `-SkipBuild` to install the last build, or `-Serial` to select a wireless device.
 - If discovery fails, check `adb mdns services` and `adb devices -l`, then reconnect using the current connection port—it can change.
 - A pairing port is not an installation port. For a signing mismatch, use a build signed with the existing app's key; uninstalling erases its data.

@@ -1,0 +1,29 @@
+{
+  "build_type": "benchmark",
+  "device": "Pixel 9",
+  "samples": 60,
+  "software_input_median_ms": 28.079102,
+  "software_input_p95_ms": 39.726237,
+  "process_allocated_bytes_including_test_harness": 131072,
+  "idle_modes": [
+    {
+      "mode": "normal",
+      "elapsed_ms": 60004,
+      "app_cpu_ms": 107,
+      "charge_used_uah": 12500
+    },
+    {
+      "mode": "black",
+      "elapsed_ms": 60003,
+      "app_cpu_ms": 1581,
+      "charge_used_uah": 15000
+    },
+    {
+      "mode": "pocket",
+      "elapsed_ms": 60004,
+      "app_cpu_ms": 174,
+      "charge_used_uah": 12500
+    }
+  ],
+  "limitations": "Software delivery only; excludes digitizer and scanout. Battery includes phone plus glasses; short samples are noisy. CPU excludes the shell service."
+}

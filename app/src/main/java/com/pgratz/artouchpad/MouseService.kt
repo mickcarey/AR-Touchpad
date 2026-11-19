@@ -33,6 +33,9 @@ import android.view.MotionEvent
  */
 class MouseService(context: android.content.Context) : IMouseService.Stub() {
 
+    @Volatile private var lastFailure = ""
+    override fun getLastError(): String = lastFailure
+
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val modeFeedback = ModeFeedbackOverlay(mainHandler)
     private val cursorFeedback = CursorFeedback()
@@ -84,8 +87,8 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     @Volatile private var readyTarget: MouseDisplayTarget? = null
     private var displayWidth = 1920
     private var displayHeight = 1080
-    private var cursorX = 960f
-    private var cursorY = 540f
+    private var zoomUnits = 0f
+    private var zoomDetentUnits = 0
 
     private var uinputReady = false
     @Volatile private var pointerHidden = false
@@ -196,11 +199,11 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     private fun initUinput() {
         try {
             val fd = UinputNative.nOpen()
-            if (fd < 0) { Log.e(TAG, "nOpen failed"); return }
+            check(fd >= 0) { "Cannot open virtual mouse. Check Shizuku permission and device support." }
 
             fun ioctl(req: Int, value: Int) {
                 val r = UinputNative.nIoctl(req, value)
-                if (r < 0) Log.w(TAG, "ioctl(0x${req.toString(16)}, $value) returned $r")
+                check(r >= 0) { "Virtual mouse configuration failed (0x${req.toString(16)})." }
             }
 
             ioctl(UI_SET_EVBIT,  EV_SYN)
@@ -215,12 +218,13 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
             ioctl(UI_SET_KEYBIT, BTN_LEFT)
             ioctl(UI_SET_KEYBIT, BTN_RIGHT)
             ioctl(UI_SET_KEYBIT, BTN_MIDDLE)
+            ioctl(UI_SET_KEYBIT, KEY_LEFTCTRL)
             ioctl(UI_SET_KEYBIT, KEY_BACK)
             ioctl(UI_SET_KEYBIT, KEY_HOME)
             ioctl(UI_SET_KEYBIT, KEY_APPSWITCH)
 
-            val n = UinputNative.nWriteDevInfo("AR Touchpad Mouse")
-            if (n < 0) { Log.e(TAG, "nWriteDevInfo failed"); return }
+            val n = UinputNative.nWriteDevInfo(DEVICE_NAME)
+            check(n > 0) { "Could not register the virtual mouse." }
 
             ioctl(UI_DEV_CREATE, 0)
 
@@ -228,10 +232,11 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
             uinputReady = true
             uinputDescriptor = findUinputDescriptor()
             Log.i(TAG, "uinput device ready, descriptor=$uinputDescriptor")
-        } catch (e: Exception) {
-            Log.e(TAG, "initUinput failed: $e")
+        } catch (e: Throwable) {
+            lastFailure = e.message ?: "Virtual mouse setup failed."
+            Log.e(TAG, "initUinput failed", e)
         } finally {
-            if (!uinputReady) UinputNative.nClose()
+            if (!uinputReady) runCatching { UinputNative.nClose() }
         }
     }
 
@@ -245,7 +250,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         val getDevice = imgGetDevice ?: return@runCatching null
         ids.toList().mapNotNull { id ->
             (getDevice.invoke(instance, id) as? android.view.InputDevice)
-                ?.takeIf { it.name == "AR Touchpad Mouse" }
+                ?.takeIf { it.name == DEVICE_NAME }
         }.firstOrNull()
     }.getOrNull()
 
@@ -307,7 +312,16 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         }.getOrElse { Log.w(TAG, "associateDeviceToDisplay failed: $it"); false }
 
     // Writes a single struct input_event{type, code, value} to the open uinput fd via JNI.
-    private fun ev(type: Int, code: Int, value: Int) = UinputNative.nWriteEvent(type, code, value)
+    private fun ev(type: Int, code: Int, value: Int): Boolean {
+        if (!uinputReady) return false
+        if (UinputNative.nWriteEvent(type, code, value) > 0) return true
+        lastFailure = "Virtual mouse stopped accepting input. Retry connection."
+        readyTarget = null
+        uinputReady = false
+        cursorFeedback.cancel()
+        UinputNative.nClose()
+        return false
+    }
     // Flushes all buffered events to the input dispatcher with an EV_SYN/SYN_REPORT marker.
     private fun sync() = ev(EV_SYN, SYN_REPORT, 0)
 
@@ -315,7 +329,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // accumulators. Associates the uinput device to the target display so that REL_X/Y events
     // move the cursor on the glasses screen instead of the phone screen. Sends a 1-px nudge
     // to wake the OS cursor on the new display.
-    override fun setDisplay(id: Int, width: Int, height: Int) {
+    @Synchronized override fun setDisplay(id: Int, width: Int, height: Int) {
         val target = MouseDisplayTarget(id, width, height)
         if (isDisplayReady(id, width, height)) return
         readyTarget = null
@@ -325,8 +339,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         displayId = id
         displayWidth = width
         displayHeight = height
-        cursorX = width / 2f
-        cursorY = height / 2f
+        zoomUnits = 0f; zoomDetentUnits = 0
         accumX = 0f
         accumY = 0f
         accumScrollX = 0f
@@ -345,7 +358,10 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         if (!uinputReady) initUinput()
         if (!uinputReady) return
         val descriptor = uinputDescriptor ?: findUinputDescriptor()?.also { uinputDescriptor = it }
-        if (descriptor == null || !associateDeviceToDisplay(descriptor, id)) return
+        if (descriptor == null || !associateDeviceToDisplay(descriptor, id)) {
+            lastFailure = "Could not route the mouse to this display. Check extended-display mode."
+            return
+        }
 
         // Nudge the pointer to wake the cursor.
         if (uinputReady) {
@@ -353,12 +369,14 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
             Thread.sleep(50)
             ev(EV_REL, REL_X, -1); ev(EV_REL, REL_Y, -1); sync()
         }
+        if (!uinputReady) return
+        lastFailure = ""
         readyTarget = target
         updateCursorVisibility()
         Log.i(TAG, "setDisplay id=$id ${width}x${height} uinputReady=$uinputReady")
     }
 
-    override fun isDisplayReady(id: Int, width: Int, height: Int): Boolean {
+    @Synchronized override fun isDisplayReady(id: Int, width: Int, height: Int): Boolean {
         if (readyTarget != MouseDisplayTarget(id, width, height)) return false
         if (pointerHidden && cursorVisibility == null) return true
         val device = findUinputDevice() ?: return false
@@ -368,7 +386,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         return runCatching { method.invoke(device) == id }.getOrDefault(false)
     }
 
-    override fun setPointerHidden(hidden: Boolean) {
+    @Synchronized override fun setPointerHidden(hidden: Boolean) {
         if (pointerHidden == hidden) return
         pointerHidden = hidden
         if (hidden) cursorFeedback.cancel()
@@ -398,7 +416,8 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         }
     }
 
-    override fun clearDisplay() {
+    @Synchronized override fun clearDisplay() {
+        imePolicies.restoreAll()
         dismissModeFeedback()
         mainHandler.post { cursorVisibility?.restore() }
         readyTarget = null
@@ -420,7 +439,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // Accumulates fractional deltas in accumX/Y; only emits REL_X/REL_Y events for the
     // whole-pixel portion, carrying the remainder forward. Also clamps the tracked cursor
     // position to the display bounds so the ViewModel overlay stays in sync.
-    override fun moveMouse(dx: Float, dy: Float) {
+    @Synchronized override fun moveMouse(dx: Float, dy: Float) {
         if (pointerHidden || !uinputReady || readyTarget == null) return
         accumX += dx
         accumY += dy
@@ -429,8 +448,6 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         if (idx == 0 && idy == 0) return
         accumX -= idx
         accumY -= idy
-        cursorX = (cursorX + idx).coerceIn(0f, displayWidth - 1f)
-        cursorY = (cursorY + idy).coerceIn(0f, displayHeight - 1f)
         ev(EV_REL, REL_X, idx)
         ev(EV_REL, REL_Y, idy)
         sync()
@@ -438,7 +455,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
 
     // Separate SYN_REPORT frames preserve down/up without holding up later motion.
     // x/y are accepted for interface symmetry but cursor position is already tracked by moveMouse.
-    override fun click(x: Float, y: Float, button: Int) {
+    @Synchronized override fun click(x: Float, y: Float, button: Int) {
         if (pointerHidden || !uinputReady || readyTarget == null) return
         val btn = if (button == MotionEvent.BUTTON_SECONDARY) BTN_RIGHT else BTN_LEFT
         ev(EV_KEY, btn, 1); sync()
@@ -452,22 +469,24 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // the key reaches the focused window on the glasses display rather than the phone.
     override fun pressKey(androidKeycode: Int) {
         if (pointerHidden || readyTarget == null) return
-        val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
-        val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
-        val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
-        try {
-            val t = SystemClock.uptimeMillis()
-            val down = KeyEvent(t, t, KeyEvent.ACTION_DOWN, androidKeycode, 0)
-            setDisp.invoke(down, displayId)
-            inject.invoke(instance, down, 0 /*INJECT_INPUT_EVENT_MODE_ASYNC*/)
-            Thread.sleep(20)
-            val up = KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, androidKeycode, 0)
-            setDisp.invoke(up, displayId)
-            inject.invoke(instance, up, 0)
-            Log.d(TAG, "pressKey keycode=$androidKeycode displayId=$displayId")
-        } catch (e: Exception) {
-            Log.e(TAG, "pressKey $androidKeycode failed: $e")
-        }
+        injectChord(listOf(androidKeycode to 0))
+    }
+
+    private fun injectChord(keys: List<Pair<Int, Int>>) {
+        val instance = imgInstance ?: return
+        val inject = imgInjectEvent ?: return
+        val setDisp = setDisplayIdMethod ?: return
+        val target = displayId
+        val downTime = SystemClock.uptimeMillis()
+        runCatching {
+            sendKeyChord(keys) { key, down, meta ->
+                val event = KeyEvent(downTime, SystemClock.uptimeMillis(),
+                    if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, key, 0, meta,
+                    KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
+                setDisp.invoke(event, target)
+                check(inject.invoke(instance, event, 0) == true) { "Key injection rejected" }
+            }
+        }.onFailure { Log.e(TAG, "Key shortcut failed", it) }
     }
 
     // Input: a plain text string. Converts the full char array to a KeyEvent sequence via
@@ -485,7 +504,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
                 injectKeyEvents(evs)
             }
         }
-        Log.d(TAG, "typeText \"$text\" displayId=$displayId")
+        Log.d(TAG, "typeText length=${text.length} displayId=$displayId")
     }
 
     // For each KeyEvent in the array, constructs a new event carrying the same action/keycode/
@@ -514,7 +533,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // mouse does, it also emits the legacy REL_WHEEL / REL_HWHEEL each time a full detent of
     // hi-res units has accumulated: InputReader uses the hi-res axis and ignores the legacy
     // one when the device declares both, and builds without hi-res support do the reverse.
-    override fun scroll(dx: Float, dy: Float) {
+    @Synchronized override fun scroll(dx: Float, dy: Float) {
         if (pointerHidden || !uinputReady || readyTarget == null) return
         accumScrollX += dx * HI_RES_UNITS_PER_PX
         accumScrollY += dy * HI_RES_UNITS_PER_PX
@@ -564,58 +583,32 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // subcommand for this). With policy 1 (fallback), a field focused on the target display
     // shows its IME on the default display (the phone) while the InputConnection stays with
     // the field — DeX-style typing. Returns false when unsupported on this build.
-    override fun setImePolicy(displayId: Int, policy: Int): Boolean {
-        val iwm = iwmInstance ?: run { Log.e(TAG, "IWindowManager unavailable"); return false }
-        val method = iwmSetImePolicy ?: run { Log.e(TAG, "setDisplayImePolicy unavailable"); return false }
-        return runCatching {
-            method.invoke(iwm, displayId, policy)
-            Log.i(TAG, "setDisplayImePolicy display=$displayId policy=$policy")
-            true
-        }.getOrElse {
-            Log.w(TAG, "setDisplayImePolicy failed: $it")
-            false
-        }
-    }
+    private val imePolicies = ImePolicyOwner(
+        read = { id ->
+            val iwm = iwmInstance ?: error("Window manager unavailable")
+            val getter = iwm.javaClass.getMethod("getDisplayImePolicy", Int::class.javaPrimitiveType)
+            getter.invoke(iwm, id) as Int
+        },
+        write = { id, policy ->
+            val iwm = iwmInstance ?: error("Window manager unavailable")
+            val setter = iwmSetImePolicy ?: error("Keyboard routing unsupported")
+            setter.invoke(iwm, id, policy)
+        },
+    )
+
+    @Synchronized override fun setImePolicy(displayId: Int, policy: Int): Boolean =
+        displayId == this.displayId && readyTarget != null && imePolicies.apply(displayId, policy)
 
     // Moonlight tracks individual modifier key events, then toggles capture once all
     // modifiers are released. A Z event with meta flags alone does not trigger it.
     override fun toggleMoonlightCapture() {
         if (pointerHidden || readyTarget == null) return
-        val instance = imgInstance ?: return
-        val inject = imgInjectEvent ?: return
-        val setDisp = setDisplayIdMethod ?: return
-        val targetDisplay = displayId
-        val downTime = SystemClock.uptimeMillis()
-        val keys = listOf(
+        injectChord(listOf(
             KeyEvent.KEYCODE_CTRL_LEFT to (KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON),
             KeyEvent.KEYCODE_ALT_LEFT to (KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON),
             KeyEvent.KEYCODE_SHIFT_LEFT to (KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON),
             KeyEvent.KEYCODE_Z to 0,
-        )
-        val pressed = mutableListOf<Pair<Int, Int>>()
-        var meta = 0
-        fun send(keycode: Int, action: Int) {
-            val event = KeyEvent(downTime, SystemClock.uptimeMillis(), action, keycode,
-                0, meta, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
-            setDisp.invoke(event, targetDisplay)
-            check(inject.invoke(instance, event, 0) == true) { "Key injection rejected" }
-        }
-        try {
-            for ((keycode, flags) in keys) {
-                meta = meta or flags
-                pressed.add(keycode to flags)
-                send(keycode, KeyEvent.ACTION_DOWN)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Moonlight capture shortcut failed", e)
-        } finally {
-            // Always attempt every release, even if an earlier event failed.
-            for ((keycode, flags) in pressed.asReversed()) {
-                meta = meta and flags.inv()
-                runCatching { send(keycode, KeyEvent.ACTION_UP) }
-                    .onFailure { Log.e(TAG, "Moonlight shortcut key release failed", it) }
-            }
-        }
+        ))
     }
 
     // Input: Android keycode (e.g. KEYCODE_C). Injects Ctrl+keycode via InputManagerGlobal
@@ -623,75 +616,45 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     // Used for Copy/Cut/Paste/SelectAll after a text selection without moving the cursor.
     override fun pressKeyWithCtrl(keycode: Int) {
         if (pointerHidden || readyTarget == null) return
-        val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
-        val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
-        val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
-        try {
-            val t = SystemClock.uptimeMillis()
-            val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
-
-            val ctrlDown = KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0, 0)
-            setDisp.invoke(ctrlDown, displayId); inject.invoke(instance, ctrlDown, 0)
-
-            val kDown = KeyEvent(t, t, KeyEvent.ACTION_DOWN, keycode, 0, ctrlMeta)
-            setDisp.invoke(kDown, displayId); inject.invoke(instance, kDown, 0)
-            Thread.sleep(20)
-
-            val kUp = KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, keycode, 0, ctrlMeta)
-            setDisp.invoke(kUp, displayId); inject.invoke(instance, kUp, 0)
-
-            val ctrlUp = KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0, 0)
-            setDisp.invoke(ctrlUp, displayId); inject.invoke(instance, ctrlUp, 0)
-
-            Log.d(TAG, "pressKeyWithCtrl keycode=$keycode displayId=$displayId")
-        } catch (e: Exception) {
-            Log.e(TAG, "pressKeyWithCtrl failed: $e")
-        }
+        injectChord(listOf(KeyEvent.KEYCODE_CTRL_LEFT to
+            (KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON), keycode to 0))
     }
 
-    // Injects a Ctrl+scroll MotionEvent (ACTION_SCROLL + META_CTRL_ON + AXIS_VSCROLL) at the
-    // tracked cursor position. Chrome and WebView-based apps zoom their page content in response;
-    // positive amount = zoom in, negative = zoom out. Does not affect the system font scale.
-    override fun ctrlScroll(amount: Float) {
-        if (pointerHidden || readyTarget == null) return
-        val instance = imgInstance ?: run { Log.e(TAG, "InputManagerGlobal unavailable"); return }
-        val inject   = imgInjectEvent ?: run { Log.e(TAG, "injectInputEvent unavailable"); return }
-        val setDisp  = setDisplayIdMethod ?: run { Log.e(TAG, "setDisplayId unavailable"); return }
+    // Use the actual mouse's wheel and modifier state. Android hit-tests at its real pointer
+    // location, including acceleration and movement from other devices; no guessed coordinates.
+    @Synchronized override fun ctrlScroll(amount: Float) {
+        if (pointerHidden || !uinputReady || readyTarget == null || !amount.isFinite()) return
+        zoomUnits += amount * HI_RES_UNITS_PER_DETENT
+        val units = zoomUnits.toInt()
+        if (units == 0) return
+        zoomUnits -= units
         try {
-            val t = SystemClock.uptimeMillis()
-            val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
-
-            val props = arrayOf(MotionEvent.PointerProperties().apply {
-                id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE
-            })
-            val coords = arrayOf(MotionEvent.PointerCoords().apply {
-                x = cursorX; y = cursorY; pressure = 0f; size = 0f
-                setAxisValue(MotionEvent.AXIS_VSCROLL, amount)
-            })
-            val event = MotionEvent.obtain(
-                t, t, MotionEvent.ACTION_SCROLL,
-                1, props, coords,
-                ctrlMeta, 0, 1f, 1f, -1, 0, InputDevice.SOURCE_MOUSE, 0
-            )
-            setDisp.invoke(event, displayId)
-            inject.invoke(instance, event, 0)
-            event.recycle()
-            Log.d(TAG, "ctrlScroll $amount displayId=$displayId")
-        } catch (e: Exception) {
-            Log.e(TAG, "ctrlScroll failed: $e")
+            if (!ev(EV_KEY, KEY_LEFTCTRL, 1)) return
+            sync()
+            ev(EV_REL, REL_WHEEL_HI_RES, units)
+            zoomDetentUnits += units
+            val detents = zoomDetentUnits / HI_RES_UNITS_PER_DETENT
+            if (detents != 0) {
+                ev(EV_REL, REL_WHEEL, detents)
+                zoomDetentUnits -= detents * HI_RES_UNITS_PER_DETENT
+            }
+            sync()
+        } finally {
+            ev(EV_KEY, KEY_LEFTCTRL, 0)
+            sync()
         }
     }
 
     // Presses BTN_LEFT without releasing — the paired mouseUp() call ends the drag.
     // Used for text selection: button held while moveMouse moves the cursor.
-    override fun mouseDown() {
+    @Synchronized override fun mouseDown() {
         if (pointerHidden || !uinputReady || readyTarget == null) return
         ev(EV_KEY, BTN_LEFT, 1); sync()
         Log.d(TAG, "mouseDown displayId=$displayId")
     }
 
     // Releases BTN_LEFT previously pressed by mouseDown().
-    override fun mouseUp() {
+    @Synchronized override fun mouseUp() {
         if (!uinputReady) return
         ev(EV_KEY, BTN_LEFT, 0); sync()
         Log.d(TAG, "mouseUp displayId=$displayId")
@@ -699,7 +662,9 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
 
     // Closes the uinput file descriptor via JNI (sends UI_DEV_DESTROY internally) and marks
     // the device unavailable so subsequent calls are no-ops rather than crashing.
-    override fun destroy() {
+    @Synchronized override fun destroy() {
+        imePolicies.restoreAll()
+        cursorFeedback.cancel()
         readyTarget = null
         UinputNative.nClose()
         uinputReady = false
@@ -709,6 +674,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
     }
 
     companion object {
+        val DEVICE_NAME = "AR Touchpad Mouse (${BuildConfig.APPLICATION_ID})"
         private const val TAG = "MouseService"
 
         const val UI_SET_EVBIT  = 0x40045564
@@ -727,6 +693,7 @@ class MouseService(context: android.content.Context) : IMouseService.Stub() {
         private const val SCROLL_PX_PER_DETENT = 20f
         private const val HI_RES_UNITS_PER_PX = HI_RES_UNITS_PER_DETENT / SCROLL_PX_PER_DETENT
         const val BTN_LEFT = 0x110; const val BTN_RIGHT = 0x111; const val BTN_MIDDLE = 0x112
+        const val KEY_LEFTCTRL = 29
         const val KEY_BACK = 158; const val KEY_HOME = 102; const val KEY_APPSWITCH = 580
         const val SYN_REPORT = 0
     }

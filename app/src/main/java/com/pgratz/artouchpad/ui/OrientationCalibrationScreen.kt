@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.pgratz.artouchpad.CalibratedRotation
 import com.pgratz.artouchpad.OrientationCalibration
 import com.pgratz.artouchpad.CalibrationStrokeTracker
 import java.util.Locale
@@ -39,6 +40,7 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
     var count by remember { mutableIntStateOf(0) }
     var result by remember { mutableStateOf<Float?>(null) }
     var hint by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf(Offset.Zero) }
     var trail by remember { mutableStateOf(emptyList<OrientationCalibration.Point>()) }
     BackHandler(onBack = onCancel)
     Surface(Modifier.fillMaxSize(), color = Color(0xFF081211), contentColor = Color(0xFFF4F0E6)) {
@@ -66,6 +68,22 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         down.consume()
+                        if (calibration.complete) {
+                            val rotation = CalibratedRotation(calibration.degrees!!)
+                            var last = down.position
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.firstOrNull { it.id == down.id }?.let {
+                                    val delta = it.position - last
+                                    last = it.position
+                                    val (dx, dy) = rotation.rotate(delta.x, delta.y)
+                                    preview = Offset((preview.x + dx).coerceIn(-size.width * 0.45f, size.width * 0.45f),
+                                        (preview.y + dy).coerceIn(-size.height * 0.45f, size.height * 0.45f))
+                                }
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
+                            return@awaitEachGesture
+                        }
                         val points = mutableListOf(OrientationCalibration.Point(down.position.x, down.position.y))
                         val tracker = CalibrationStrokeTracker(calibration, reversalTravel)
                         tracker.add(points.first())
@@ -82,26 +100,30 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
                                 }
                             }
                             event.changes.forEach { it.consume() }
-                            trail = points.toList()
+                            trail = points.takeLast(256)
                         } while (event.changes.any { it.pressed })
                         if (!singleFinger) hint = "Use one finger."
                         else updateProgress(tracker.finish())
                     }
                 }, contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
-                    trail.zipWithNext().forEach { (a, b) ->
+                    if (result != null) {
+                        drawCircle(Color(0xFFE6AF52), 9.dp.toPx(), center + preview)
+                        drawCircle(Color.White, 3.dp.toPx(), center + preview)
+                    } else for (i in 1 until trail.size) {
+                        val a = trail[i - 1]; val b = trail[i]
                         drawLine(Color(0xFFE6AF52), Offset(a.x, a.y), Offset(b.x, b.y), strokeWidth = 3.dp.toPx())
                     }
                 }
-                Text(if (result != null) "Ready to save" else "Swipe here", color = Color(0xFFC2CCBF))
+                Text(if (result != null) "Swipe to test direction" else "Swipe here", color = Color(0xFFC2CCBF))
             }
-            Text(hint ?: if (result == null) "$count / ${OrientationCalibration.STROKES} swipes" else "Applies to the cursor and scrolling.",
+            Text(hint ?: if (result == null) "$count / ${OrientationCalibration.STROKES} swipes" else "Test the dot before saving. Up should move it up; right should move it right.",
                 textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = onCancel) { Text("Cancel") }
                 TextButton(onClick = {
                     calibration = OrientationCalibration(minimumTravel)
-                    count = 0; result = null; hint = null; trail = emptyList()
+                    count = 0; result = null; hint = null; trail = emptyList(); preview = Offset.Zero
                 }) { Text("Start again") }
                 Button(enabled = result != null, onClick = { result?.let(onSave) }) { Text("Save") }
             }
