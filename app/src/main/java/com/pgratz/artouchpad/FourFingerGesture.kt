@@ -9,7 +9,7 @@ internal class FourFingerGesture(
     private val tapMs: Long = 350,
     private val holdMs: Long = 800,
 ) {
-    enum class Decision { PASS, CONSUMED, OPEN_SETTINGS, TOGGLE_POCKET }
+    enum class Decision { PASS, CONSUMED, TOGGLE_SETTINGS, TOGGLE_POCKET }
     private val origins = mutableMapOf<Long, MultiFingerTapTracker.Contact>()
     private var active = false
     private var startedAt = 0L
@@ -56,7 +56,7 @@ internal class FourFingerGesture(
         if (count == 0) {
             active = false
             return if (claimed && eligible && !fired && time - startedAt <= tapMs)
-                Decision.OPEN_SETTINGS
+                Decision.TOGGLE_SETTINGS
             else if (claimed) Decision.CONSUMED else Decision.PASS
         }
         if (onTime(time) == Decision.TOGGLE_POCKET) return Decision.TOGGLE_POCKET

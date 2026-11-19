@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class TouchMode { IDLE, CURSOR, SCROLL, SELECT }
 
@@ -42,9 +44,20 @@ private const val IME_POLICY_FALLBACK = 1  // IME on the default display (phone)
 val DIM_DELAY_CHOICES_SEC = listOf(0, 15, 30, 60, 120, 300)
 const val DEFAULT_DIM_DELAY_SEC = 30
 
-data class DisplayInfo(val id: Int, val name: String, val width: Int, val height: Int)
+data class DisplayInfo(val id: Int, val name: String, val width: Int, val height: Int, val uniqueId: String = name)
 
 data class TouchpadState(
+    val smoothing: Smoothing = Smoothing.LIGHT,
+    val precision: Boolean = false,
+    val autoCopy: Boolean = false,
+    val dragLock: Boolean = false,
+    val dragHeld: Boolean = false,
+    val inputEpoch: Long = 0,
+    val holdMs: Long = 600,
+    val threeFingerAction: ThreeFingerAction = ThreeFingerAction.MOONLIGHT,
+    val preferredDisplay: String? = null,
+    val selectedProfile: UsageProfile = UsageProfile.DESKTOP,
+    val connectionMessage: String = "Starting connection…",
     val shizukuAvailable: Boolean = false,
     val shizukuPermission: Boolean = false,
     val mouseReady: Boolean = false,
@@ -84,18 +97,18 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("touchpad_prefs", Context.MODE_PRIVATE)
 
+    private val settingsStore = InputSettingsStore(prefs)
+
     private val _state = MutableStateFlow(TouchpadState(
-        sensitivity = prefs.getFloat("sensitivity", 0.5f),
-        scrollSpeed = prefs.getFloat("scroll_speed", 0.8f),
-        naturalScroll = prefs.getBoolean("natural_scroll", true),
+        preferredDisplay = prefs.getString("preferred_display", null),
+        selectedProfile = runCatching { UsageProfile.valueOf(prefs.getString("selected_profile", "DESKTOP")!!) }
+            .getOrDefault(UsageProfile.DESKTOP),
         axisRotation = AxisRotation.fromDegrees(prefs.getInt("axis_rotation_degrees", 0)),
         calibratedRotationDegrees = if (prefs.contains("calibrated_rotation_degrees"))
             prefs.getFloat("calibrated_rotation_degrees", 0f).takeIf { it.isFinite() && it in -180f..180f } else null,
         dimDelaySec = prefs.getInt("dim_delay_sec", DEFAULT_DIM_DELAY_SEC),
-        blackTouchpad = prefs.getBoolean("black_touchpad", false),
         pocketMode = prefs.getBoolean("pocket_mode", false),
-        dexKeyboardEnabled = prefs.getBoolean("dex_keyboard", false),
-    ))
+    ).withInputSettings(settingsStore.load()))
     val state: StateFlow<TouchpadState> = _state.asStateFlow()
     // Transient feedback only: restoring a saved mode must not replay a notification.
     private val _pocketModeChanges = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
@@ -115,11 +128,11 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var pinchAccum = 0f
-    private var smoothDx = 0f
-    private var smoothDy = 0f
+    private val motionFilter = MotionFilter()
     private var appliedImePolicy: Pair<Int, Int>? = null
     private var pendingImePolicy: Pair<Int, Int>? = null
     private var imePolicyJob: Job? = null
+    private val imeMutex = Mutex()
 
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = refresh()
@@ -142,22 +155,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
             val m = DisplayMetrics()
             @Suppress("DEPRECATION")
             d.getMetrics(m)
-            DisplayInfo(d.displayId, d.name ?: "Display ${d.displayId}", m.widthPixels, m.heightPixels)
+            DisplayInfo(d.displayId, d.name ?: "Display ${d.displayId}", m.widthPixels, m.heightPixels,
+                runCatching { org.lsposed.hiddenapibypass.HiddenApiBypass.invoke(Display::class.java, d, "getUniqueId") as String }
+                    .getOrDefault("${d.name}:${m.widthPixels}x${m.heightPixels}"))
         }
 
-        // Pick the external display: prefer any non-default display,
-        // fall back to presentation category.
-        val external = allDisplays.firstOrNull { it.id != Display.DEFAULT_DISPLAY }
-            ?: run {
-                displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-                    .firstOrNull()
-                    ?.let { d ->
-                        val m = DisplayMetrics()
-                        @Suppress("DEPRECATION")
-                        d.getMetrics(m)
-                        DisplayInfo(d.displayId, d.name ?: "Presentation", m.widthPixels, m.heightPixels)
-                    }
-            }
+        val external = selectDisplay(allDisplays, _state.value.preferredDisplay)
 
         val available = mouse.hasShizuku()
         val permitted = mouse.hasPermission()
@@ -174,7 +177,7 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
             imePolicyJob?.cancel()
             appliedImePolicy = null
             pendingImePolicy = null
-            smoothDx = 0f; smoothDy = 0f; pinchAccum = 0f
+            motionFilter.reset(); pinchAccum = 0f
         }
 
         _state.update {
@@ -182,6 +185,14 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
                 shizukuAvailable = available,
                 shizukuPermission = permitted,
                 mouseReady = ready,
+                connectionMessage = when {
+                    !available -> "Start Shizuku to connect the mouse."
+                    !permitted -> "Grant Shizuku permission."
+                    external == null -> "Connect an external display."
+                    ready -> "Connected to ${external.name}"
+                    else -> mouse.connectionMessage
+                },
+                dragHeld = ready && it.dragHeld,
                 allDisplays = allDisplays,
                 targetDisplay = external,
                 dexKeyboardActive = ready && appliedImePolicy?.second == IME_POLICY_FALLBACK,
@@ -208,7 +219,9 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         imePolicyJob?.cancel()
         pendingImePolicy = requested
         imePolicyJob = viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) { mouse.setImePolicy(displayId, policy) }
+            val ok = imeMutex.withLock {
+                withContext(Dispatchers.IO) { mouse.setImePolicy(displayId, policy) }
+            }
             val currentPolicy = if (_state.value.dexKeyboardEnabled && !_state.value.pocketMode)
                 IME_POLICY_FALLBACK else IME_POLICY_LOCAL
             if (_state.value.targetDisplay?.id != displayId || !mouse.isDisplayReady ||
@@ -221,37 +234,32 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // Input: raw pixel deltas from the touch event.
-    // Applies velocity-adaptive exponential smoothing (heavy for slow/fine moves,
-    // light for fast moves) before scaling by sensitivity. This suppresses finger
-    // tremor on precise movements without adding noticeable lag on fast sweeps.
-    fun moveCursor(rawDx: Float, rawDy: Float) {
+    // Time-based smoothing has consistent behavior across touch sampling rates.
+    fun moveCursor(rawDx: Float, rawDy: Float, time: Long) {
         if (!_state.value.touchpadInputEnabled) return
-        val speed = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy)
-        val alpha = (speed / 8f).coerceIn(0.30f, 0.85f)
-        smoothDx = alpha * rawDx + (1f - alpha) * smoothDx
-        smoothDy = alpha * rawDy + (1f - alpha) * smoothDy
-
         val state = _state.value
-        val (dx, dy) = state.rotateInput(
-            smoothDx * state.sensitivity, smoothDy * state.sensitivity,
-        )
-        if (dx == 0f && dy == 0f) return
-        mouse.moveMouse(dx, dy)
+        val (dx, dy) = motionFilter.move(rawDx, rawDy, time, state.smoothing)
+        sendMovement(dx, dy)
+    }
 
-        // MouseService owns the cursor position. Publishing unused coordinates here
-        // used to recompose the whole phone/settings UI on every touch sample.
+    private fun sendMovement(x: Float, y: Float) {
+        val state = _state.value
+        val scale = state.sensitivity * if (state.precision) 0.3f else 1f
+        val (dx, dy) = state.rotateInput(x * scale, y * scale)
+        if (dx != 0f || dy != 0f) mouse.moveMouse(dx, dy)
     }
 
     // Tracks gesture mode and drains buffered input at gesture boundaries.
     // Resets the smoothing filter on IDLE so the decaying tail doesn't bleed into the next touch.
     fun setTouchMode(mode: TouchMode) {
         if (mode == TouchMode.IDLE) {
+            val tail = motionFilter.finish()
+            sendMovement(tail.first, tail.second)
             mouse.flushMovement()
-            smoothDx = 0f; smoothDy = 0f
             pinchAccum = 0f
         }
         // The scroll gesture is over: send the tail still held back by the IPC pacing.
-        if (mode != TouchMode.SCROLL) mouse.flushScroll()
+        if (mode != TouchMode.SCROLL) mouse.finishScroll()
         _state.update { it.copy(touchMode = mode) }
     }
 
@@ -269,13 +277,19 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     fun startSelectDrag() { if (_state.value.touchpadInputEnabled) mouse.mouseDown() }
 
     // System navigation/cancellation must release a held button without copying text.
-    fun cancelSelectDrag() = mouse.mouseUp()
+    fun cancelSelectDrag() {
+        motionFilter.reset()
+        mouse.cancelPendingInput()
+        mouse.mouseUp()
+        setDragHeld(false)
+        _state.update { it.copy(inputEpoch = it.inputEpoch + 1) }
+    }
+    fun setDragHeld(held: Boolean) { _state.update { it.copy(dragHeld = held) } }
 
-    // Releases BTN_LEFT to end the selection drag, then immediately injects Ctrl+C to copy
-    // the selection into the clipboard before any cursor movement can clear it.
+    // Ordinary drags only release the button. Copy is an explicit opt-in preference.
     fun endSelectDrag() {
         mouse.mouseUp()
-        if (_state.value.touchpadInputEnabled) mouse.pressKeyWithCtrl(android.view.KeyEvent.KEYCODE_C)
+        if (_state.value.touchpadInputEnabled && _state.value.autoCopy) mouse.pressKeyWithCtrl(android.view.KeyEvent.KEYCODE_C)
     }
 
     // Turns finger travel into the distance the view should scroll, scaled by scrollSpeed.
@@ -313,12 +327,10 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     // Settings state updaters — each writes one field into TouchpadState and persists it
     // so tuned values survive app restarts.
     fun setSensitivity(v: Float) {
-        prefs.edit().putFloat("sensitivity", v).apply()
-        _state.update { it.copy(sensitivity = v) }
+        _state.update { it.copy(sensitivity = InputSettings(sensitivity = v).validated().sensitivity) }
     }
     fun setScrollSpeed(v: Float) {
-        prefs.edit().putFloat("scroll_speed", v).apply()
-        _state.update { it.copy(scrollSpeed = v) }
+        _state.update { it.copy(scrollSpeed = InputSettings(scrollSpeed = v).validated().scrollSpeed) }
     }
     fun setNaturalScroll(v: Boolean) {
         prefs.edit().putBoolean("natural_scroll", v).apply()
@@ -359,10 +371,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     fun setPocketMode(enabled: Boolean) = updatePocketMode(enabled, closeSettings = false)
 
     private fun resetTouchpadInput() {
+        _state.update { it.copy(inputEpoch = it.inputEpoch + 1) }
+        setDragHeld(false)
         setDragReady(false)
         mouse.cancelPendingInput()
         mouse.mouseUp()
-        smoothDx = 0f; smoothDy = 0f; pinchAccum = 0f
+        motionFilter.reset(); pinchAccum = 0f
     }
 
     private fun updatePocketMode(enabled: Boolean, closeSettings: Boolean) {
@@ -392,16 +406,61 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         mouse.setPointerHidden(_state.value.pocketInputLocked)
     }
 
+    fun persistInputSettings() = settingsStore.save(_state.value.inputSettings())
+
+    fun updateInputSettings(change: (InputSettings) -> InputSettings) {
+        resetTouchpadInput()
+        val settings = change(_state.value.inputSettings()).validated()
+        settingsStore.save(settings)
+        _state.update { it.withInputSettings(settings) }
+        _state.value.targetDisplay?.let { applyImePolicy(it.id) }
+    }
+
+    fun applyProfile(profile: UsageProfile) {
+        updateInputSettings { settingsStore.load(profile) }
+        prefs.edit().putString("selected_profile", profile.name).apply()
+        _state.update { it.copy(selectedProfile = profile) }
+    }
+    fun saveProfile(profile: UsageProfile) = settingsStore.save(_state.value.inputSettings(), profile)
+
+    fun resetDefaults() {
+        resetTouchpadInput()
+        prefs.edit().clear().apply()
+        val current = _state.value
+        _state.value = TouchpadState(showSettings = true, allDisplays = current.allDisplays,
+            targetDisplay = current.targetDisplay, mouseReady = current.mouseReady,
+            inputEpoch = current.inputEpoch)
+        mouse.setPointerHidden(false)
+        refresh()
+    }
+
+    fun selectTargetDisplay(uniqueId: String?) {
+        resetTouchpadInput()
+        prefs.edit().putString("preferred_display", uniqueId).apply()
+        _state.update { it.copy(preferredDisplay = uniqueId) }
+        refresh()
+    }
+
+    fun retryConnection() { resetTouchpadInput(); mouse.retry(); refresh() }
+
+    fun performThreeFingerAction() {
+        if (!_state.value.touchpadInputEnabled) return
+        when (_state.value.threeFingerAction) {
+            ThreeFingerAction.MOONLIGHT -> toggleMoonlightCapture()
+            ThreeFingerAction.PLAY_PAUSE -> pressKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            ThreeFingerAction.PRECISION -> updateInputSettings { it.copy(precision = !it.precision) }
+            ThreeFingerAction.SETTINGS -> openSettings()
+            ThreeFingerAction.NONE -> Unit
+        }
+    }
+
     // Cleans up the display listener and mouse service when the
     // ViewModel is destroyed (e.g. app process ends or activity is permanently finished).
     override fun onCleared() {
         imePolicyJob?.cancel()
         displayManager.unregisterDisplayListener(displayListener)
-        // Restore the glasses-side IME before the service goes away. Synchronous call:
-        // viewModelScope is already cancelled by the time onCleared runs.
-        if (appliedImePolicy?.second == IME_POLICY_FALLBACK) {
-            _state.value.targetDisplay?.let { mouse.setImePolicy(it.id, IME_POLICY_LOCAL) }
-        }
+        persistInputSettings()
+        // MouseService restores the original policies it owns before destroying its device.
         mouse.destroy()
     }
 }

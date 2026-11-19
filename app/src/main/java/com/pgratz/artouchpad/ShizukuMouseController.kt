@@ -38,6 +38,20 @@ class ShizukuMouseController {
     var isConnected = false
         private set
 
+    var connectionMessage = "Connecting to Shizuku…"
+        private set
+    private var binding = false
+    private var failed = false
+    private var destroyed = false
+    private var healthJob: Job? = null
+    private var active = true
+    private val bindTimeout = Runnable {
+        if (binding && !isConnected) {
+            binding = false; failed = true
+            connectionMessage = "Shizuku did not respond. Check it is running, then retry."
+            onStateChanged?.invoke()
+        }
+    }
     private var service: IMouseService? = null
     private var pointerHidden = false
     private var onStateChanged: (() -> Unit)? = null
@@ -46,43 +60,54 @@ class ShizukuMouseController {
         now = SystemClock::uptimeMillis,
         schedule = { task, delay -> motionHandler.postDelayed(task, delay); Unit },
         cancel = { motionHandler.removeCallbacks(it) },
-        send = { dx, dy -> runCatching { service?.moveMouse(dx, dy) }; Unit },
+        send = { dx, dy -> input { it.moveMouse(dx, dy) } },
     )
     private val displayBinding = DisplayBinding()
     private val connectionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var displayJob: Job? = null
     val isDisplayReady get() = displayBinding.isReady
-    private var lastScrollMs = 0L
-    private var pendingScrollX = 0f
-    private var pendingScrollY = 0f
+    private val scrolling = ScrollScheduler(SystemClock::uptimeMillis,
+        { task, delay -> motionHandler.postDelayed(task, delay); Unit },
+        { motionHandler.removeCallbacks(it) }, { x, y -> input { it.scroll(x, y) } })
 
     private val userServiceArgs = Shizuku.UserServiceArgs(
-        ComponentName("com.pgratz.artouchpad", MouseService::class.java.name)
+        ComponentName(BuildConfig.APPLICATION_ID, MouseService::class.java.name)
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(30)  // hold native colour until drag-ready ends; brief upward size pulse
+        .version(32)  // isolated variant devices, native Ctrl+wheel and input failure status
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (destroyed) return
             // Shizuku can report an already-connected service again. Keep its motion
             // state and display association instead of resetting a live pointer.
             if (isConnected && service?.asBinder() == binder) return
+            binding = false; failed = false
+            motionHandler.removeCallbacks(bindTimeout)
             displayJob?.cancel()
             displayBinding.invalidate()
             resetPendingInput()
             service = IMouseService.Stub.asInterface(binder)
             runCatching { service?.setPointerHidden(pointerHidden) }
             isConnected = service != null
+            connectionMessage = "Preparing mouse for the display…"
+            startHealthChecks()
             onStateChanged?.invoke()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
+            if (destroyed) return
+            binding = false
+            healthJob?.cancel()
+            motionHandler.removeCallbacks(bindTimeout)
+            connectionMessage = "Mouse service disconnected. Retry to reconnect."
             displayJob?.cancel()
             displayBinding.invalidate()
             resetPendingInput()
             service = null
             isConnected = false
-            onStateChanged?.invoke()
+            // Shizuku clears its old callback set after returning; bind on the next turn.
+            motionHandler.post { if (!destroyed) onStateChanged?.invoke() }
         }
     }
 
@@ -91,15 +116,27 @@ class ShizukuMouseController {
         onStateChanged?.invoke()
     }
 
+    private val binderReceived = Shizuku.OnBinderReceivedListener {
+        motionHandler.post { if (!destroyed) { failed = false; bind(); onStateChanged?.invoke() } }
+    }
+    private val binderDead = Shizuku.OnBinderDeadListener {
+        motionHandler.post { if (!destroyed) connection.onServiceDisconnected(null) }
+    }
+
     // Stores the state-change callback and registers the Shizuku permission result listener
     // so bind() is called automatically if the user grants permission while the app is open.
     fun init(onStateChanged: () -> Unit) {
         this.onStateChanged = onStateChanged
         Shizuku.addRequestPermissionResultListener(permissionListener)
+        Shizuku.addBinderReceivedListenerSticky(binderReceived)
+        Shizuku.addBinderDeadListener(binderDead)
     }
 
     // Unregisters the permission listener and unbinds (and destroys) the UserService.
     fun destroy() {
+        destroyed = true
+        Shizuku.removeBinderReceivedListener(binderReceived)
+        Shizuku.removeBinderDeadListener(binderDead)
         Shizuku.removeRequestPermissionResultListener(permissionListener)
         connectionScope.cancel()
         unbind()
@@ -110,7 +147,7 @@ class ShizukuMouseController {
 
     // Returns true if Shizuku is running AND this app has been granted shell-uid permission.
     fun hasPermission(): Boolean =
-        hasShizuku() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        runCatching { hasShizuku() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
 
     // Opens Shizuku's permission dialog if the daemon is running but permission hasn't been granted.
     fun requestPermission() {
@@ -120,16 +157,28 @@ class ShizukuMouseController {
     // Asks Shizuku to start MouseService as a shell-uid UserService and bind to it via
     // the ServiceConnection. No-op if already connected or permission not granted.
     fun bind() {
-        if (hasPermission() && !isConnected) {
-            Shizuku.bindUserService(userServiceArgs, connection)
+        if (destroyed || binding || failed || isConnected || !hasPermission()) return
+        binding = true
+        connectionMessage = "Connecting to Shizuku…"
+        motionHandler.postDelayed(bindTimeout, 10_000)
+        runCatching { Shizuku.bindUserService(userServiceArgs, connection) }.onFailure {
+            binding = false; failed = true
+            motionHandler.removeCallbacks(bindTimeout)
+            connectionMessage = "Could not start the mouse service. Retry connection."
         }
     }
 
     // Sends destroy + unbind to Shizuku and clears the local service reference.
     fun unbind() {
+        binding = false
+        healthJob?.cancel()
+        motionHandler.removeCallbacks(bindTimeout)
         displayJob?.cancel()
         displayBinding.invalidate()
         resetPendingInput()
+        // Remove the local cached callback before killing its remote service. Otherwise a
+        // late death callback can clear a newly-added connection during rapid reopen.
+        runCatching { Shizuku.unbindUserService(userServiceArgs, connection, false) }
         runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
         service = null
         isConnected = false
@@ -140,15 +189,17 @@ class ShizukuMouseController {
     fun setDisplay(displayId: Int, width: Int, height: Int) {
         val target = MouseDisplayTarget(displayId, width, height)
         if (displayBinding.select(target)) {
+            failed = false
             displayJob?.cancel()
             resetPendingInput()
         }
-        if (displayBinding.isReady || displayJob?.isActive == true) return
+        if (!active || failed || displayBinding.isReady || displayJob?.isActive == true) return
         val connected = service ?: return
         val revision = displayBinding.revision
         displayJob = connectionScope.launch {
             var retryDelay = 250L
-            while (isActive) {
+            var attempts = 0
+            while (isActive && attempts++ < 8) {
                 // Creation and association run in the service, never on the UI thread.
                 val ready = runCatching {
                     connected.setDisplay(target.id, target.width, target.height)
@@ -157,6 +208,7 @@ class ShizukuMouseController {
                     }
                 }.getOrDefault(false)
                 if (ready && service === connected && displayBinding.markReady(revision)) {
+                    connectionMessage = "Mouse ready"
                     onStateChanged?.invoke()
                     return@launch
                 }
@@ -165,11 +217,19 @@ class ShizukuMouseController {
                 delay(retryDelay)
                 retryDelay = (retryDelay * 2).coerceAtMost(2000L)
             }
+            if (isActive && service === connected && revision == displayBinding.revision) {
+                failed = true
+                val detail = withContext(Dispatchers.IO) { runCatching { connected.lastError }.getOrNull() }
+                connectionMessage = detail?.takeIf { it.isNotBlank() }
+                    ?: "Mouse could not attach to this display. Check extended-display mode, then retry."
+                onStateChanged?.invoke()
+            }
         }
     }
 
     fun clearDisplay() {
         val changed = displayBinding.select(null)
+        if (changed) failed = false
         displayJob?.cancel()
         displayJob = null
         resetPendingInput()
@@ -202,15 +262,14 @@ class ShizukuMouseController {
 
     private fun resetPendingInput() {
         movement.reset()
-        pendingScrollX = 0f
-        pendingScrollY = 0f
-        lastScrollMs = 0L
+        scrolling.reset()
     }
 
     // Single left-click at the current cursor position.
     fun click(x: Float, y: Float) {
         if (!isDisplayReady) return
         flushMovement()
+        flushScroll()
         runCatching { service?.click(x, y, MotionEvent.BUTTON_PRIMARY) }
     }
 
@@ -218,6 +277,7 @@ class ShizukuMouseController {
     fun rightClick(x: Float, y: Float) {
         if (!isDisplayReady) return
         flushMovement()
+        flushScroll()
         runCatching { service?.click(x, y, MotionEvent.BUTTON_SECONDARY) }
     }
 
@@ -227,25 +287,9 @@ class ShizukuMouseController {
     // itself, and unsmoothed it reaches the app as a stutter of tiny forward and backward
     // wheel steps. Nothing is lost — the remainder goes out on later intervals, and
     // flushScroll() sends what is left when the gesture ends.
-    fun scroll(dx: Float, dy: Float) {
-        pendingScrollX += dx
-        pendingScrollY += dy
-        val now = SystemClock.uptimeMillis()
-        if (now - lastScrollMs < 16L) return
-        lastScrollMs = now
-        val sendX = pendingScrollX * SCROLL_SMOOTHING
-        val sendY = pendingScrollY * SCROLL_SMOOTHING
-        pendingScrollX -= sendX; pendingScrollY -= sendY
-        runCatching { service?.scroll(sendX, sendY) }
-    }
-
-    // Sends whatever scroll distance is still being held back.
-    fun flushScroll() {
-        if (pendingScrollX == 0f && pendingScrollY == 0f) return
-        val sendX = pendingScrollX; val sendY = pendingScrollY
-        pendingScrollX = 0f; pendingScrollY = 0f
-        runCatching { service?.scroll(sendX, sendY) }
-    }
+    fun scroll(dx: Float, dy: Float) { if (isDisplayReady) scrolling.add(dx, dy) }
+    fun finishScroll() = scrolling.finish()
+    fun flushScroll() = scrolling.flush()
 
     // Injects an Android keycode (e.g. KEYCODE_BACK) targeted at the glasses display.
     fun pressKey(linuxKeyCode: Int) {
@@ -263,7 +307,7 @@ class ShizukuMouseController {
     }
 
     // Presses BTN_LEFT without releasing — call moveMouse while held for click-drag selection.
-    fun mouseDown() { flushMovement(); runCatching { service?.mouseDown() } }
+    fun mouseDown() { flushMovement(); flushScroll(); runCatching { service?.mouseDown() } }
     // Releases BTN_LEFT pressed by mouseDown().
     fun mouseUp()   { flushMovement(); runCatching { service?.mouseUp() } }
 
@@ -280,8 +324,62 @@ class ShizukuMouseController {
     fun setImePolicy(displayId: Int, policy: Int): Boolean =
         runCatching { service?.setImePolicy(displayId, policy) ?: false }.getOrDefault(false)
 
-    private companion object {
-        // Share of the pending scroll distance sent per ~16 ms interval; the rest is carried.
-        const val SCROLL_SMOOTHING = 0.4f
+    fun retry() {
+        failed = false
+        displayJob?.cancel()
+        displayJob = null
+        displayBinding.invalidate()
+        resetPendingInput()
+        val connected = service
+        if (connected != null && connected.asBinder().isBinderAlive) {
+            // Recreate the mouse on the live service. Immediately destroying and rebinding
+            // can race Shizuku's removal of its old service record.
+            runCatching { connected.clearDisplay() }
+            connectionMessage = "Preparing mouse for the display…"
+        } else {
+            unbind()
+            bind()
+        }
+    }
+
+    private fun input(action: (IMouseService) -> Unit) {
+        val connected = service ?: return
+        runCatching { action(connected) }.onFailure {
+            if (service === connected) {
+                displayBinding.invalidate(); resetPendingInput(); failed = true
+                connectionMessage = "Input connection failed. Retry connection."
+                motionHandler.post { onStateChanged?.invoke() }
+            }
+        }
+    }
+
+    fun setActive(value: Boolean) {
+        active = value
+        if (!value) clearDisplay()
+        startHealthChecks()
+        onStateChanged?.invoke()
+    }
+    private fun startHealthChecks() {
+        healthJob?.cancel()
+        if (!active || !isConnected || destroyed) return
+        healthJob = connectionScope.launch {
+            while (isActive) {
+                delay(5000)
+                val target = displayBinding.target ?: continue
+                if (!displayBinding.isReady) continue
+                val connected = service ?: continue
+                val revision = displayBinding.revision
+                val healthy = withContext(Dispatchers.IO) {
+                    runCatching { connected.isDisplayReady(target.id, target.width, target.height) }.getOrDefault(false)
+                }
+                if (!healthy && service === connected && revision == displayBinding.revision) {
+                    displayBinding.invalidate(); resetPendingInput(); failed = true
+                    connectionMessage = withContext(Dispatchers.IO) {
+                        runCatching { connected.lastError }.getOrNull()
+                    }?.takeIf { it.isNotBlank() } ?: "Mouse lost its display connection. Retry connection."
+                    onStateChanged?.invoke()
+                }
+            }
+        }
     }
 }

@@ -311,6 +311,11 @@ class MainActivity : ComponentActivity() {
 
     // Re-checks display and Shizuku state when returning from Settings or the permission
     // dialog, so the UI reflects any changes the user made while away.
+    override fun onStart() {
+        super.onStart()
+        viewModel.mouse.setActive(true)
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.refresh()
@@ -329,6 +334,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        viewModel.persistInputSettings()
+        viewModel.cancelSelectDrag()
+        viewModel.mouse.setActive(false)
         viewModel.mouse.dismissModeFeedback()
         dismissSettingsPresentation()
         viewModel.closeSettings()

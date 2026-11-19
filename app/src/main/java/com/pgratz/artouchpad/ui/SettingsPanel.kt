@@ -15,18 +15,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.pgratz.artouchpad.R
 import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.DisplayInfo
+import com.pgratz.artouchpad.FourFingerGesture
+import com.pgratz.artouchpad.MultiFingerTapTracker
 
 // Vanilla8's published brandColors at https://vanilla8.com/: ink #081211,
 // teal #014D67 / #154462, amber #E6AF52, orange #E45F02 and olive #55732B.
@@ -72,25 +73,35 @@ internal fun SettingsPanel(
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     connectionControls: @Composable () -> Unit,
+    onSpeedFinished: () -> Unit,
+    extraControls: @Composable () -> Unit,
+    mediaEnabled: Boolean = false,
+    onMediaKey: (Int) -> Unit = {},
 ) {
     var showInfo by remember { mutableStateOf(false) }
+    val dismiss by rememberUpdatedState(onDismiss)
+    val density = LocalDensity.current.density
+    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
     MaterialTheme(colorScheme = SettingsColors) {
-        Box(Modifier.fillMaxSize()) {
+        // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
+        // Observe before child controls and only consume once four fingers claim the gesture.
+        Box(Modifier.fillMaxSize().pointerInput(density) {
+            val gesture = FourFingerGesture(16f * density)
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val decision = gesture.update(event.changes.first().uptimeMillis, event.changes.map {
+                        MultiFingerTapTracker.Contact(it.id.value, it.position.x, it.position.y, it.pressed)
+                    })
+                    if (decision != FourFingerGesture.Decision.PASS) event.changes.forEach { it.consume() }
+                    if (decision == FourFingerGesture.Decision.TOGGLE_SETTINGS) dismiss()
+                }
+            }
+        }) {
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Settings", modifier = Modifier.weight(1f),
-                            fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                        IconButton(onClick = { showInfo = true }) {
-                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
-                        }
-                        Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
-                            Text("Done")
-                        }
-                    }
+                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
@@ -99,8 +110,8 @@ internal fun SettingsPanel(
                             connectionControls()
                             val pointer: @Composable () -> Unit = {
                                 SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
-                                    SpeedSetting("Cursor speed", sensitivity, 0.4f..2f, onSensitivity)
-                                    SpeedSetting("Scroll speed", scrollSpeed, 0.3f..1.3f, onScrollSpeed)
+                                    SpeedSetting("Cursor speed", sensitivity, 0.2f..3f, onSensitivity, onSpeedFinished)
+                                    SpeedSetting("Scroll speed", scrollSpeed, 0.1f..2f, onScrollSpeed, onSpeedFinished)
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     SettingsChoice("Phone orientation", calibratedRotationDegrees?.let(::calibratedRotationLabel)
                                         ?: axisRotationLabel(axisRotation),
@@ -125,14 +136,14 @@ internal fun SettingsPanel(
                             val display: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                     SettingsSection("Phone & keyboard", "Keep the touchpad comfortable to use") {
-                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens settings.", pocketMode, onPocketMode)
+                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes settings.", pocketMode, onPocketMode)
                                         ToggleSetting("Black touchpad", "Keep the phone completely black while using the pad.", blackTouchpad, onBlackTouchpad)
                                         if (!blackTouchpad) SettingsChoice("Dim phone after", dimDelayLabel(dimDelaySec),
                                             "Only dims the phone. External display stays bright.",
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
                                         else SupportingText(if (pocketMode)
                                             "The pad stays black. Settings and unlock gestures stay active."
-                                        else "Touch and edge swipes stay active. Settings stay on your external display.")
+                                        else "Touch stays active. Four-finger tap opens/closes settings on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -158,6 +169,7 @@ internal fun SettingsPanel(
                                 pointer()
                                 display()
                             }
+                            extraControls()
                         }
                     }
                 }
@@ -168,12 +180,12 @@ internal fun SettingsPanel(
 }
 
 @Composable
-private fun SupportingText(text: String) {
+internal fun SupportingText(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
-private fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
+internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
     content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -190,7 +202,7 @@ private fun SettingsSection(title: String, subtitle: String? = null, accent: Col
 }
 
 @Composable
-private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, onFinished: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
@@ -198,12 +210,12 @@ private fun SpeedSetting(label: String, value: Float, range: ClosedFloatingPoint
             Text("%.1f×".format(value), color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelLarge)
         }
-        Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
+        Slider(value = value.coerceIn(range), onValueChange = onChange, onValueChangeFinished = onFinished, valueRange = range)
     }
 }
 
 @Composable
-private fun ToggleSetting(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleSetting(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -215,7 +227,7 @@ private fun ToggleSetting(title: String, description: String, checked: Boolean, 
 }
 
 @Composable
-private fun <T> SettingsChoice(title: String, value: String, description: String,
+internal fun <T> SettingsChoice(title: String, value: String, description: String,
     options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -275,12 +287,12 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             "One-finger drag" to "Move cursor",
                             "One-finger tap / double-tap" to "Click / double-click",
                             "One-finger long-press" to "Right-click",
-                            "Long-press, then drag" to "Select text",
+                            "Long-press, then drag" to "Drag / select text",
                             "Two-finger tap" to "Right-click",
                             "Two-finger drag" to "Scroll",
                             "Two-finger pinch" to "Zoom page",
-                            "Three-finger tap" to "Toggle Moonlight capture",
-                            "Four-finger tap" to "Open settings",
+                            "Three-finger tap" to "Your chosen shortcut",
+                            "Four-finger tap" to "Open / close settings",
                             "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
                         ).forEach { (gesture, action) ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -290,7 +302,6 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("Settings fallback: swipe across most of the phone's top or bottom edge in either direction.")
                         SupportingText("Four-finger gestures work while locked. Settings open on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
                     }
                     SettingsSection("Displays", accent = Color(0xFF55732B)) {

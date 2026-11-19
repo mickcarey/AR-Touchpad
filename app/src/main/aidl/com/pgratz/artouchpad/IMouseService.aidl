@@ -82,6 +82,9 @@ interface IMouseService {
     oneway void dismissModeFeedback() = 18;
     oneway void setDragReady(boolean ready) = 19;
 
+    // Last actionable setup/input failure; empty when healthy.
+    String getLastError() = 20;
+
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;
 }

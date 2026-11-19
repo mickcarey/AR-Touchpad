@@ -15,6 +15,7 @@ val localProps = Properties().also { props ->
 android {
     namespace = "com.pgratz.artouchpad"
     compileSdk = 35
+    testBuildType = providers.gradleProperty("deviceTestBuildType").getOrElse("debug")
 
     signingConfigs {
         create("release") {
@@ -26,13 +27,14 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.pgratz.artouchpad"
+        applicationId = "au.com.michaelcarey.artouchpad"
         // minSdk 34 (Android 14): required for WindowManager.currentWindowMetrics and
         // the DisplayManager APIs used to detect the glasses as a secondary display.
         minSdk = 34
         targetSdk = 35
         versionCode = 2
         versionName = "1.1"
+        manifestPlaceholders["appLabel"] = "AR Touchpad"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // arm64-v8a only: Pixel 10 and Viture XR Pro are both 64-bit ARM devices.
@@ -42,6 +44,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "AR Touchpad Debug"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
@@ -49,6 +56,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("prod") {
+            initWith(getByName("release"))
+            manifestPlaceholders["appLabel"] = "AR Touchpad Prod"
+            // Local stable installs use the local key unless a release key is configured.
+            // Production and Debug have separate application IDs and app data.
+            signingConfig = if (localProps.getProperty("KEYSTORE_PATH") != null)
+                signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            isDebuggable = false
+        }
+        // Release behavior with a local debug signature, for repeatable device profiling.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            isDebuggable = false
+            applicationIdSuffix = ".benchmark"
+            versionNameSuffix = "-benchmark"
+            manifestPlaceholders["appLabel"] = "AR Touchpad Benchmark"
         }
     }
 
@@ -62,10 +89,15 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
         // aidl: generates IMouseService Java stubs from IMouseService.aidl, used for
         // IPC between the app process and the Shizuku UserService (MouseService).
         aidl = true
+    }
+    sourceSets.getByName("benchmark") {
+        java.srcDir("src/debug/java")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
 
     lint {
@@ -84,6 +116,11 @@ android {
 
 dependencies {
     testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.ui.test.junit4)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -103,4 +140,5 @@ dependencies {
     implementation(libs.hiddenapibypass)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    "benchmarkImplementation"(libs.androidx.ui.test.manifest)
 }

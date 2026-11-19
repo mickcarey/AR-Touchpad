@@ -67,12 +67,4 @@ class PocketModeTest {
         assertFalse(ready.copy(pocketMode = false, mouseReady = false).touchpadInputEnabled)
     }
 
-    @Test fun settingsEdgeSwipeIsRecognizedWhileInputIsLocked() {
-        val locked = ready.copy(pocketMode = true)
-        assertFalse(locked.touchpadInputEnabled)
-        val swipe = SettingsEdgeSwipe(56f, 72f, 36f)
-        swipe.begin(30f, 20f, 400f, 800f, 0)
-        assertEquals(SettingsEdgeSwipe.Decision.CONSUMED, swipe.update(130f, 20f, 200, 1, false))
-        assertEquals(SettingsEdgeSwipe.Decision.OPEN_SETTINGS, swipe.update(350f, 20f, 700, 1, true))
-    }
 }

@@ -13,6 +13,8 @@ param(
     [string]$Serial,
     [switch]$SkipBuild,
     [switch]$Launch,
+    [ValidateSet('prod', 'debug', 'benchmark')]
+    [string]$Variant = 'prod',
     [string]$AdbPath
 )
 $ErrorActionPreference = 'Stop'
@@ -76,10 +78,14 @@ if ($Serial -notin $devices) { throw "Device $Serial is not online/authorized. C
 Push-Location $projectRoot
 try {
     if (-not $SkipBuild) {
-        & "$projectRoot\gradlew.bat" :app:assembleDebug
+        if (-not $env:ANDROID_HOME -and (Test-Path -LiteralPath "$env:LOCALAPPDATA\Android\Sdk")) {
+            $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+        }
+        $buildTask = ':app:assemble' + [char]::ToUpperInvariant($Variant[0]) + $Variant.Substring(1)
+        & "$projectRoot\gradlew.bat" $buildTask
         if ($LASTEXITCODE -ne 0) { throw 'Gradle build failed; nothing was installed.' }
     }
-    $apk = Join-Path $projectRoot 'app\build\outputs\apk\debug\app-debug.apk'
+    $apk = Join-Path $projectRoot "app\build\outputs\apk\$Variant\app-$Variant.apk"
     if (-not (Test-Path -LiteralPath $apk)) { throw "APK not found: $apk. Run without -SkipBuild." }
     $result = Invoke-AdbChecked @('-s', $Serial, 'install', '-r', $apk)
     Write-Host ($result -join [Environment]::NewLine)
@@ -87,11 +93,12 @@ try {
         throw 'Install did not report success. Existing app data has not been removed.'
     }
     if ($Launch) {
-        $result = Invoke-AdbChecked @('-s', $Serial, 'shell', 'am', 'start', '-n', 'com.pgratz.artouchpad/.MainActivity')
+        $packageId = 'au.com.michaelcarey.artouchpad' + $(if ($Variant -eq 'prod') { '' } else { ".$Variant" })
+        $result = Invoke-AdbChecked @('-s', $Serial, 'shell', 'am', 'start', '--display', '0', '-n', "$packageId/com.pgratz.artouchpad.MainActivity")
         Write-Host ($result -join [Environment]::NewLine)
         if (($result -join ' ') -match 'Error:|Exception') { throw 'App launch failed.' }
     }
-    Write-Host "Installed AR Touchpad on $Serial."
+    Write-Host "Installed AR Touchpad $Variant on $Serial."
 } finally {
     Pop-Location
 }
