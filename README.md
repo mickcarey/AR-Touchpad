@@ -42,7 +42,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 - **Copy after dragging:** off by default. Enable it for text-selection workflows. Cancellation always releases without copying.
 - **Drag lock:** optional; hold and drag, lift to reposition, then tap to release. Adding another finger cancels.
 - **Hold timing:** 300–1200 ms for right-click/drag readiness. Four-finger Pocket unlock remains 800 ms.
-- **Media:** play/pause, volume, rewind and forward controls. Seeking depends on the active player. A three-finger media shortcut is blocked while Pocket mode is locked.
+- **Media:** icon-only previous track, play/pause, next track, volume down, mute/unmute and volume up buttons stay in the settings header while you scroll. Compact windows use a second header row. Track skipping depends on the active player. A three-finger media shortcut is blocked while Pocket mode is locked.
 - **Display choice:** remember a display by its stable identity, with automatic fallback while it is absent.
 - **Recovery:** explicit connection status and Retry connection; Reset defaults clears preferences, profiles and calibration after an in-app confirmation.
 

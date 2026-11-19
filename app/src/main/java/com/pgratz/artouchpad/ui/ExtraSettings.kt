@@ -1,6 +1,5 @@
 package com.pgratz.artouchpad.ui
 
-import android.view.KeyEvent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,18 +42,6 @@ internal fun ExtraSettings(viewModel: TouchpadViewModel, state: TouchpadState) {
             ThreeFingerAction.entries.map { it to it.label }) { value ->
             viewModel.updateInputSettings { it.copy(threeFingerAction = value) }
         }
-    }
-    SettingsSection("Media", "Controls the active media session. Seeking depends on the player.") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(enabled = state.mouseReady, onClick = { viewModel.pressKey(KeyEvent.KEYCODE_MEDIA_REWIND) }) { Text("Rewind") }
-            Button(enabled = state.mouseReady, onClick = { viewModel.pressKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }) { Text("Play / pause") }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(enabled = state.mouseReady, onClick = { viewModel.pressKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) }) { Text("Forward") }
-            OutlinedButton(enabled = state.mouseReady, onClick = { viewModel.pressKey(KeyEvent.KEYCODE_VOLUME_DOWN) }) { Text("Vol −") }
-            OutlinedButton(enabled = state.mouseReady, onClick = { viewModel.pressKey(KeyEvent.KEYCODE_VOLUME_UP) }) { Text("Vol +") }
-        }
-        SupportingText("For playback without opening settings, assign Play / pause to three-finger tap. Pocket mode blocks that gesture until unlocked.")
     }
     SettingsSection("Display & recovery") {
         val external = state.allDisplays.filter { it.id != 0 }

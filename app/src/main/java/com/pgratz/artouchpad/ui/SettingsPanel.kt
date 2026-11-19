@@ -16,14 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.pgratz.artouchpad.R
 import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.DisplayInfo
@@ -74,6 +70,8 @@ internal fun SettingsPanel(
     connectionControls: @Composable () -> Unit,
     onSpeedFinished: () -> Unit,
     extraControls: @Composable () -> Unit,
+    mediaEnabled: Boolean = false,
+    onMediaKey: (Int) -> Unit = {},
 ) {
     var showInfo by remember { mutableStateOf(false) }
     if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
@@ -82,18 +80,7 @@ internal fun SettingsPanel(
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Settings", modifier = Modifier.weight(1f),
-                            fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                        IconButton(onClick = { showInfo = true }) {
-                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
-                        }
-                        Button(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) {
-                            Text("Done")
-                        }
-                    }
+                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, onDismiss)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp

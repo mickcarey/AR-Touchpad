@@ -121,6 +121,8 @@ fun TouchpadSettings(viewModel: TouchpadViewModel) {
             connectionControls = { ConnectionControls(viewModel) },
             onSpeedFinished = viewModel::persistInputSettings,
             extraControls = { ExtraSettings(viewModel, state) },
+            mediaEnabled = state.touchpadInputEnabled,
+            onMediaKey = viewModel::pressKey,
         )
     }
 }
