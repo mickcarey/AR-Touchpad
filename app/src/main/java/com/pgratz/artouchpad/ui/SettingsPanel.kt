@@ -15,6 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -23,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import com.pgratz.artouchpad.AxisRotation
 import com.pgratz.artouchpad.DIM_DELAY_CHOICES_SEC
 import com.pgratz.artouchpad.DisplayInfo
+import com.pgratz.artouchpad.FourFingerGesture
+import com.pgratz.artouchpad.MultiFingerTapTracker
 
 // Vanilla8's published brandColors at https://vanilla8.com/: ink #081211,
 // teal #014D67 / #154462, amber #E6AF52, orange #E45F02 and olive #55732B.
@@ -74,13 +79,29 @@ internal fun SettingsPanel(
     onMediaKey: (Int) -> Unit = {},
 ) {
     var showInfo by remember { mutableStateOf(false) }
+    val dismiss by rememberUpdatedState(onDismiss)
+    val density = LocalDensity.current.density
     if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
     MaterialTheme(colorScheme = SettingsColors) {
-        Box(Modifier.fillMaxSize()) {
+        // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
+        // Observe before child controls and only consume once four fingers claim the gesture.
+        Box(Modifier.fillMaxSize().pointerInput(density) {
+            val gesture = FourFingerGesture(16f * density)
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val decision = gesture.update(event.changes.first().uptimeMillis, event.changes.map {
+                        MultiFingerTapTracker.Contact(it.id.value, it.position.x, it.position.y, it.pressed)
+                    })
+                    if (decision != FourFingerGesture.Decision.PASS) event.changes.forEach { it.consume() }
+                    if (decision == FourFingerGesture.Decision.TOGGLE_SETTINGS) dismiss()
+                }
+            }
+        }) {
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, onDismiss)
+                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
@@ -115,14 +136,14 @@ internal fun SettingsPanel(
                             val display: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                     SettingsSection("Phone & keyboard", "Keep the touchpad comfortable to use") {
-                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens settings.", pocketMode, onPocketMode)
+                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes settings.", pocketMode, onPocketMode)
                                         ToggleSetting("Black touchpad", "Keep the phone completely black while using the pad.", blackTouchpad, onBlackTouchpad)
                                         if (!blackTouchpad) SettingsChoice("Dim phone after", dimDelayLabel(dimDelaySec),
                                             "Only dims the phone. External display stays bright.",
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
                                         else SupportingText(if (pocketMode)
                                             "The pad stays black. Settings and unlock gestures stay active."
-                                        else "Touch stays active. Four-finger tap opens settings on your external display.")
+                                        else "Touch stays active. Four-finger tap opens/closes settings on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -271,7 +292,7 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             "Two-finger drag" to "Scroll",
                             "Two-finger pinch" to "Zoom page",
                             "Three-finger tap" to "Your chosen shortcut",
-                            "Four-finger tap" to "Open settings",
+                            "Four-finger tap" to "Open / close settings",
                             "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
                         ).forEach { (gesture, action) ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {

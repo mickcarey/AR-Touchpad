@@ -70,7 +70,7 @@ fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = fals
                 viewModel::setDragReady,
                 onDragHeld = viewModel::setDragHeld, holdMs = state.holdMs, dragLock = state.dragLock,
                 inputEpoch = state.inputEpoch,
-                viewModel::openSettings,
+                viewModel::toggleSettings,
                 pocketMode = state.pocketInputLocked,
                 onTogglePocketMode = {
                     val locked = viewModel.togglePocketMode()
@@ -169,7 +169,7 @@ private fun TouchpadSurface(
     holdMs: Long,
     dragLock: Boolean,
     inputEpoch: Long,
-    onOpenSettings: () -> Unit,
+    onToggleSettings: () -> Unit,
     pocketMode: Boolean,
     onTogglePocketMode: () -> Unit,
     showVisuals: Boolean,
@@ -210,7 +210,7 @@ private fun TouchpadSurface(
                         }
                         override fun settings() {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onOpenSettings()
+                            onToggleSettings()
                         }
                         override fun pocket() = togglePocketMode()
                     }, holdMs, dragLock, density)

@@ -19,7 +19,6 @@ internal fun SettingsHeader(
     mediaEnabled: Boolean,
     onMediaKey: (Int) -> Unit,
     onInformation: () -> Unit,
-    onDismiss: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
         val inlineMedia = maxWidth >= 768.dp
@@ -35,7 +34,6 @@ internal fun SettingsHeader(
                     IconButton(onClick = onInformation) {
                         Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
                     }
-                    Button(onClick = onDismiss) { Text("Done") }
                 }
             }
             if (!inlineMedia) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

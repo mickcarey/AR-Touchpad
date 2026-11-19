@@ -96,15 +96,7 @@ class ConnectedInputTest {
             vm.closeSettings()
             vm.updateInputSettings { it.copy(smoothing = Smoothing.OFF, sensitivity = 1f, precision = false) }
         }
-        instrumentation.waitForIdleSync()
-        // Compose applies state/LaunchedEffect on a frame, after the main queue can be idle.
-        val frames = java.util.concurrent.CountDownLatch(1)
-        main.onActivity { activity ->
-            activity.window.decorView.postOnAnimation {
-                activity.window.decorView.postOnAnimation { frames.countDown() }
-            }
-        }
-        assertTrue("Phone surface did not draw", frames.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        awaitPhoneFrame()
         val hover = InputProbeActivity.samples.last { it.action == MotionEvent.ACTION_HOVER_MOVE || it.action == MotionEvent.ACTION_HOVER_ENTER }
         InputProbeActivity.samples.clear()
         val down = SystemClock.uptimeMillis()
@@ -127,6 +119,57 @@ class ConnectedInputTest {
             InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE && (it.x != hover.x || it.y != hover.y) }
         }
         assertFalse("An edge swipe opened settings", vm.state.value.showSettings)
+    }
+
+    private fun awaitPhoneFrame() {
+        instrumentation.waitForIdleSync()
+        // Compose applies state/LaunchedEffect on a frame, after the main queue can be idle.
+        val frames = java.util.concurrent.CountDownLatch(1)
+        main.onActivity { activity ->
+            activity.window.decorView.postOnAnimation {
+                activity.window.decorView.postOnAnimation { frames.countDown() }
+            }
+        }
+        assertTrue("Phone surface did not draw", frames.await(5, java.util.concurrent.TimeUnit.SECONDS))
+    }
+
+    private fun fourFingerTap() {
+        val down = SystemClock.uptimeMillis()
+        val properties = Array(4) { index -> MotionEvent.PointerProperties().apply {
+            id = index; toolType = MotionEvent.TOOL_TYPE_FINGER
+        } }
+        val coordinates = Array(4) { index -> MotionEvent.PointerCoords().apply {
+            x = 200f + index * 120f; y = 500f; pressure = 1f; size = 1f
+        } }
+        fun send(action: Int, count: Int) {
+            main.onActivity { activity ->
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, count,
+                    properties, coordinates, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+                try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+            }
+            SystemClock.sleep(10)
+        }
+        send(MotionEvent.ACTION_DOWN, 1)
+        for (count in 2..4) send(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+        for (count in 4 downTo 2) send(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+        send(MotionEvent.ACTION_UP, 1)
+    }
+
+    @Test fun fourFingerTapTogglesExternalSettingsAndRestoresPocketLock() {
+        for (locked in listOf(false, true)) {
+            main.onActivity { vm.closeSettings(); vm.setPocketMode(locked) }
+            awaitPhoneFrame()
+            fourFingerTap()
+            await("Four-finger tap did not open settings") { vm.state.value.showSettings }
+            assertFalse(vm.state.value.pocketInputLocked)
+            assertTrue(vm.state.value.touchpadInputEnabled)
+            awaitPhoneFrame()
+            fourFingerTap()
+            await("Second four-finger tap did not close settings") { !vm.state.value.showSettings }
+            assertEquals(locked, vm.state.value.pocketMode)
+            assertEquals(locked, vm.state.value.pocketInputLocked)
+            assertEquals(!locked, vm.state.value.touchpadInputEnabled)
+        }
     }
     @Test fun cancelledDragReleasesButtonAndNeverCopies() {
         receiveInput()

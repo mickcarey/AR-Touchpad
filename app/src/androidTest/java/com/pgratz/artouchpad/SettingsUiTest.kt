@@ -33,13 +33,13 @@ class SettingsUiTest {
         "Volume up" to KeyEvent.KEYCODE_VOLUME_UP,
     )
 
-    private fun mediaPanel(width: Int, enabled: Boolean = true, onKey: (Int) -> Unit = {}) {
+    private fun mediaPanel(width: Int, enabled: Boolean = true, onKey: (Int) -> Unit = {}, onDismiss: () -> Unit = {}) {
         compose.setContent {
             // Exercise phone and glasses widths on the same physical test device.
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 Box(Modifier.width(width.dp).height(700.dp)) {
                     SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
-                        false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                        false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, onDismiss, {}, {},
                         { Text("Bottom marker") }, mediaEnabled = enabled, onMediaKey = onKey)
                 }
             }
@@ -63,6 +63,7 @@ class SettingsUiTest {
         }
         compose.runOnIdle { assertEquals(mediaKeys.map { it.second }, received) }
         compose.onNodeWithText("Play / pause").assertDoesNotExist()
+        compose.onNodeWithText("Done").assertDoesNotExist()
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         java.io.File(context.getExternalFilesDir(null), "media-header-$width.png").outputStream().use {
             compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
@@ -74,6 +75,17 @@ class SettingsUiTest {
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
         mediaKeys.forEach { (label, _) -> compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled() }
+    }
+    @Test fun fourFingerTapClosesPhoneSettingsOnceWithoutDoneButton() {
+        var dismissals = 0
+        mediaPanel(360, enabled = false, onDismiss = { dismissals++ })
+        compose.onNodeWithTag("settings-header").performTouchInput {
+            for (finger in 0..3) down(finger, androidx.compose.ui.geometry.Offset(30f + finger * 60f, 20f))
+            advanceEventTime(80)
+            for (finger in 3 downTo 0) up(finger)
+        }
+        compose.runOnIdle { assertEquals(1, dismissals) }
+        compose.onNodeWithText("Done").assertDoesNotExist()
     }
     @Test fun speedSliderPreviewsContinuouslyButCommitsOnceOnRelease() {
         var changes = 0; var saves = 0
@@ -94,8 +106,10 @@ class SettingsUiTest {
         }
         compose.onNodeWithContentDescription("Information").performClick()
         compose.onNodeWithText("Four-finger tap", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Open / close settings", useUnmergedTree = true).assertExists()
         compose.onAllNodes(hasText("Settings fallback", substring = true)).assertCountEquals(0)
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Done").assertExists()
+        compose.onNodeWithText("Done").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Information").assertExists()
     }
 }

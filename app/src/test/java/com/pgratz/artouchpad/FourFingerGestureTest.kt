@@ -11,7 +11,7 @@ class FourFingerGestureTest {
 
     @Test fun simultaneousTapOpensSettingsOnlyOnRelease() {
         assertEquals(CONSUMED, gesture.update(0, contacts()))
-        assertEquals(OPEN_SETTINGS, gesture.update(100, contacts(pressed = false)))
+        assertEquals(TOGGLE_SETTINGS, gesture.update(100, contacts(pressed = false)))
         assertEquals(PASS, gesture.onTime(1000))
     }
 
@@ -22,7 +22,7 @@ class FourFingerGestureTest {
             val event = contacts(n).map { if (it.id == n.toLong()) it.copy(pressed = false) else it }
             assertEquals(CONSUMED, gesture.update(250L + (4 - n) * 10, event))
         }
-        assertEquals(OPEN_SETTINGS, gesture.update(300, contacts(1, pressed = false)))
+        assertEquals(TOGGLE_SETTINGS, gesture.update(300, contacts(1, pressed = false)))
     }
 
     @Test fun motionlessHoldUsesTimerAndFiresOnlyOnce() {
@@ -102,7 +102,7 @@ class FourFingerGestureTest {
         }
         update(0, 3, true)
         update(30, 4, true)
-        assertEquals(OPEN_SETTINGS, update(100, 4, false).first)
+        assertEquals(TOGGLE_SETTINGS, update(100, 4, false).first)
         update(1000, 3, true)
         assertEquals(PASS to 3, update(1100, 3, false))
     }

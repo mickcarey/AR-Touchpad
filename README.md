@@ -29,7 +29,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 | 🔒 **Pocket mode** | Keep watching while walking or exercising, without pocket bumps clicking or scrolling. Blocks trackpad input and hides the cursor; four-finger settings and unlock gestures still work. |
 | 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A responsive layout, teal-and-amber accents, and changes that save immediately. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
-| ✋ **Four-finger shortcuts** | Tap four fingers together for settings; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
+| ✋ **Four-finger shortcuts** | Tap four fingers together to open or close settings; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
 | 🎨 **Drag-ready feedback** | After a configurable hold (600 ms by default), the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
 | ⌨️ **Keyboard where you want it** | Keep the popup keyboard on the external display, or choose **Phone** to type there. Pocket mode suppresses the phone keyboard until you unlock. |
 | 🔌 **Connect in either order** | Open the app before or after plugging in the glasses. The mouse connects when the display appears and reconnects after an unplug/replug. |
@@ -50,7 +50,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 
 Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers still for **0.8 seconds**. Pair it with **Black touchpad** for a dark phone surface while your external display stays awake.
 
-Need to change something? Tap four fingers to open settings in the glasses. The cursor becomes available immediately while settings are open. Close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
+Need to change something? Tap four fingers to open settings in the glasses. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
 The phone stays awake: this is an input lock, not Android's screen lock. Android's own system gestures still apply. Settings fall back to the phone when the external display or mouse is unavailable.
 
@@ -72,11 +72,11 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Move two fingers | Scroll |
 | Pinch / spread | Zoom out / in |
 | Three-finger tap | Configurable: Moonlight capture (default), play/pause, precision, settings, or disabled |
-| Four-finger tap together | Open settings; also works in Pocket mode |
+| Four-finger tap together | Open / close settings; also works in Pocket mode |
 | Four-finger hold for 0.8 seconds | Toggle Pocket mode |
 | Swipe up from the phone's bottom navigation edge | Android Home; swipe up and hold for the app switcher |
 
-**Settings access:** four-finger tap opens settings. Edge swipes are ordinary cursor movement; they never open settings. When disconnected, use the visible Settings button.
+**Settings access:** four-finger tap toggles settings open and closed; there is no Done button. Phone-side settings also close with four-finger tap or Android Back. Edge swipes are ordinary cursor movement; they never open settings. When disconnected, use the visible Settings button.
 
 **Haptics are optional.** When system touch haptics are enabled, one pulse confirms locking and two confirm unlocking. Visual feedback also works with haptics off. The drag size pulse grows from your current native cursor size, up to Android's maximum; leave some room below maximum to see it.
 

@@ -96,7 +96,7 @@ internal class TouchGestureEngine(
             clearHold(); cancelDrag(); taps.cancelTap(); moved = true
             previous = emptyList(); setMode(TouchMode.IDLE)
             when (fourDecision) {
-                FourFingerGesture.Decision.OPEN_SETTINGS -> output.settings()
+                FourFingerGesture.Decision.TOGGLE_SETTINGS -> output.settings()
                 FourFingerGesture.Decision.TOGGLE_POCKET -> output.pocket()
                 else -> Unit
             }
