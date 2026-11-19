@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,17 +21,22 @@ internal fun SettingsHeader(
     onInformation: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
         val inlineMedia = maxWidth >= 768.dp
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Settings", Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Medium)
                 if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey)
-                IconButton(onClick = onInformation) {
-                    Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                // Equal side widths keep media centered in the whole header, independent of title/actions.
+                Row(if (inlineMedia) Modifier.weight(1f) else Modifier,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+                    IconButton(onClick = onInformation) {
+                        Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                    }
+                    Button(onClick = onDismiss) { Text("Done") }
                 }
-                Button(onClick = onDismiss) { Text("Done") }
             }
             if (!inlineMedia) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 MediaButtons(mediaEnabled, onMediaKey)

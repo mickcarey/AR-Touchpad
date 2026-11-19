@@ -52,6 +52,9 @@ class SettingsUiTest {
         val before = mediaKeys.map { (label, _) ->
             compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsEnabled().getUnclippedBoundsInRoot()
         }
+        val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
+        val mediaCenter = (before.first().left.value + before.last().right.value) / 2f
+        assertEquals("Media controls are not centered in the header", (header.left.value + header.right.value) / 2f, mediaCenter, 1f)
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
         mediaKeys.forEachIndexed { index, (label, _) ->
             val control = compose.onNodeWithContentDescription(label).assertIsDisplayed()
