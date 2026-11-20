@@ -306,7 +306,6 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         mouse.cancelPendingInput()
         mouse.mouseUp()
         setDragHeld(false)
-        _state.update { it.copy(inputEpoch = it.inputEpoch + 1) }
     }
     fun setDragHeld(held: Boolean) { _state.update { it.copy(dragHeld = held) } }
 
@@ -394,13 +393,11 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun setPocketMode(enabled: Boolean) = updatePocketMode(enabled, closeSettings = false)
 
-    private fun resetTouchpadInput() {
+    fun resetTouchpadInput() {
         _state.update { it.copy(inputEpoch = it.inputEpoch + 1) }
-        setDragHeld(false)
+        cancelSelectDrag()
         setDragReady(false)
-        mouse.cancelPendingInput()
-        mouse.mouseUp()
-        motionFilter.reset(); pinchAccum = 0f
+        pinchAccum = 0f
     }
 
     private fun updatePocketMode(enabled: Boolean, closeSettings: Boolean) {

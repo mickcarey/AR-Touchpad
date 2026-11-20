@@ -23,8 +23,12 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.ResultReceiver
+import android.os.Bundle
 import android.view.MotionEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -78,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(36)  // phone notification shade and Overview
+        .version(37)  // acknowledged display release for build switching
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -191,13 +195,14 @@ class ShizukuMouseController {
     // Forwards display id and pixel dimensions to MouseService so it can target
     // cursor and key events at the correct display.
     fun setDisplay(displayId: Int, width: Int, height: Int) {
+        if (!active) return
         val target = MouseDisplayTarget(displayId, width, height)
         if (displayBinding.select(target)) {
             failed = false
             displayJob?.cancel()
             resetPendingInput()
         }
-        if (!active || failed || displayBinding.isReady || displayJob?.isActive == true) return
+        if (failed || displayBinding.isReady || displayJob?.isActive == true) return
         val connected = service ?: return
         val revision = displayBinding.revision
         displayJob = connectionScope.launch {
@@ -231,13 +236,18 @@ class ShizukuMouseController {
         }
     }
 
-    fun clearDisplay() {
+    fun clearDisplay(completion: ResultReceiver? = null) {
         val changed = displayBinding.select(null)
         if (changed) failed = false
         displayJob?.cancel()
         displayJob = null
         resetPendingInput()
-        if (changed) runCatching { service?.clearDisplay() }
+        val connected = service
+        if (connected == null) completion?.send(android.app.Activity.RESULT_OK, null)
+        else if (changed || completion != null) {
+            runCatching { connected.clearDisplay(completion) }
+                .onFailure { completion?.send(android.app.Activity.RESULT_CANCELED, null) }
+        }
     }
 
     fun setPointerHidden(hidden: Boolean) {
@@ -361,7 +371,7 @@ class ShizukuMouseController {
         if (connected != null && connected.asBinder().isBinderAlive) {
             // Recreate the mouse on the live service. Immediately destroying and rebinding
             // can race Shizuku's removal of its old service record.
-            runCatching { connected.clearDisplay() }
+            runCatching { connected.clearDisplay(null) }
             connectionMessage = "Preparing mouse for the display…"
         } else {
             unbind()
@@ -380,11 +390,21 @@ class ShizukuMouseController {
         }
     }
 
-    fun setActive(value: Boolean) {
+    fun setActive(value: Boolean, released: ResultReceiver? = null) {
         active = value
-        if (!value) clearDisplay()
+        if (!value) clearDisplay(released)
         startHealthChecks()
         onStateChanged?.invoke()
+    }
+
+    suspend fun pauseForBuildSwitch(): Boolean {
+        val released = CompletableDeferred<Boolean>()
+        setActive(false, object : ResultReceiver(motionHandler) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                released.complete(resultCode == android.app.Activity.RESULT_OK)
+            }
+        })
+        return withTimeoutOrNull(3000) { released.await() } == true
     }
     private fun startHealthChecks() {
         healthJob?.cancel()

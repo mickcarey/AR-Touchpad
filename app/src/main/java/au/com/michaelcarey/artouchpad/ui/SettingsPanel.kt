@@ -29,6 +29,7 @@ import au.com.michaelcarey.artouchpad.DisplayInfo
 import au.com.michaelcarey.artouchpad.FourFingerGesture
 import au.com.michaelcarey.artouchpad.MultiFingerTapTracker
 import au.com.michaelcarey.artouchpad.MediaState
+import au.com.michaelcarey.artouchpad.TouchpadBuild
 import androidx.compose.ui.window.PopupProperties
 
 private val LocalNonFocusableSettings = staticCompositionLocalOf { false }
@@ -76,13 +77,15 @@ internal fun SettingsPanel(
     onPocketMode: (Boolean) -> Unit,
     onDexKeyboard: (Boolean) -> Unit,
     onDismiss: () -> Unit,
-    connectionControls: @Composable () -> Unit,
+    appControls: @Composable () -> Unit,
     onSpeedFinished: () -> Unit,
     extraControls: @Composable () -> Unit,
     mediaEnabled: Boolean = false,
     onMediaKey: (Int) -> Unit = {},
     mediaState: MediaState = MediaState(),
     nonFocusable: Boolean = false,
+    availableBuild: TouchpadBuild? = null,
+    onSwitchBuild: (TouchpadBuild) -> Unit = {},
 ) {
     var showInfo by remember { mutableStateOf(false) }
     val dismiss by rememberUpdatedState(onDismiss)
@@ -108,13 +111,14 @@ internal fun SettingsPanel(
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
-                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState)
+                    SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
+                        availableBuild, onSwitchBuild)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
                         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                            connectionControls()
+                            appControls()
                             val pointer: @Composable () -> Unit = {
                                 SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
                                     SpeedSetting("Cursor speed", sensitivity, 0.2f..3f, onSensitivity, onSpeedFinished)

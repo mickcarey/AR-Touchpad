@@ -17,6 +17,10 @@
 package au.com.michaelcarey.artouchpad
 
 import android.os.Bundle
+import android.app.ActivityOptions
+import android.content.ActivityNotFoundException
+import android.view.Display
+import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -79,6 +83,7 @@ class MainActivity : ComponentActivity() {
     private var dimScheduled = false
     private var settingsOverlay: SettingsOverlay? = null
     private var settingsOnPhone by mutableStateOf(false)
+    private var switchingBuild = false
     private var protectPhoneGestures = false
     private var topEdgeBarControl: WindowInsetsAnimationController? = null
     private var topEdgeStroke = false
@@ -202,7 +207,7 @@ class MainActivity : ComponentActivity() {
             val state by viewModel.state.collectAsState()
             ARTouchpadTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TouchpadScreen(viewModel, settingsOnPhone, onShowPhoneOverview = {
+                    TouchpadScreen(viewModel, settingsOnPhone, ::switchBuild, onShowPhoneOverview = {
                         // Overview can keep this activity resumed for its live preview.
                         protectPhoneGestures = false
                         viewModel.mouse.setNotificationShadeBlocked(false)
@@ -262,7 +267,7 @@ class MainActivity : ComponentActivity() {
         if (!viewModel.state.value.showSettings || viewModel.state.value.targetDisplay?.id != displayId) return false
         var overlay: SettingsOverlay? = null
         return try {
-            val newOverlay = SettingsOverlay(this, display, viewModel)
+            val newOverlay = SettingsOverlay(this, display, viewModel, ::switchBuild)
             overlay = newOverlay
             newOverlay.setOnDismissListener {
                 if (settingsOverlay === newOverlay) {
@@ -285,6 +290,38 @@ class MainActivity : ComponentActivity() {
         settingsOverlay?.setOnDismissListener(null)
         settingsOverlay?.dismiss()
         settingsOverlay = null
+    }
+
+    private fun switchBuild(target: TouchpadBuild) {
+        if (switchingBuild) return
+        switchingBuild = true
+        lifecycleScope.launch {
+            var launched = false
+            try {
+                viewModel.persistInputSettings()
+                viewModel.resetTouchpadInput()
+                if (!viewModel.mouse.pauseForBuildSwitch()) {
+                    Toast.makeText(this@MainActivity, "Touchpad is busy. Try switching again.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || !viewModel.state.value.showSettings) {
+                    return@launch
+                }
+                val intent = target.launchIntent(this@MainActivity) ?: throw ActivityNotFoundException()
+                // Both the phone UI and the external overlay hand off the phone's task.
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+                startActivity(intent, options.toBundle())
+                launched = true
+                viewModel.closeSettings()
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this@MainActivity, "${target.name} is unavailable.", Toast.LENGTH_SHORT).show()
+            } catch (_: SecurityException) {
+                Toast.makeText(this@MainActivity, "Android could not open ${target.name}.", Toast.LENGTH_SHORT).show()
+            } finally {
+                switchingBuild = false
+                if (!launched && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.mouse.setActive(true)
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -402,7 +439,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         viewModel.persistInputSettings()
-        viewModel.cancelSelectDrag()
+        viewModel.resetTouchpadInput()
         viewModel.mouse.setActive(false)
         viewModel.mouse.dismissModeFeedback()
         dismissSettingsOverlay()

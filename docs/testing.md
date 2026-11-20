@@ -31,6 +31,14 @@ adb -s emulator-5556 shell cmd display get-displays -i
 
 Install and start Shizuku inside the emulator, install the Debug and test APKs, then grant AR Touchpad Debug access in the Shizuku dialog. Use the emulator serial with every install and instrumentation command. The edge-gesture test sends swipes through Android's input dispatcher and checks for movement on the second display.
 
+To test switching builds, also install the local Prod APK on the emulator and opt in to the handoff test. It clicks the switch icon in the external settings header using its **Switch to Prod** accessibility label and checks that Prod opens on the phone, Debug releases its mouse, and the external test app stays resumed.
+
+```powershell
+.\gradlew.bat :app:assembleProd
+adb -s emulator-5556 install -r app/build/outputs/apk/prod/app-prod.apk
+adb -s emulator-5556 shell am instrument -w -e buildSwitch true -e class 'au.com.michaelcarey.artouchpad.ConnectedInputTest#switchFromGlassesSettingsLaunchesProdOnPhone' au.com.michaelcarey.artouchpad.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
 ## Connected tests
 
 Keep the emulator unlocked with Shizuku running and the secondary display attached. The suite launches its own input receiver on that display.

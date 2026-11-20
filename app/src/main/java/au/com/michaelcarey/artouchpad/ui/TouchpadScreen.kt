@@ -17,6 +17,12 @@
 package au.com.michaelcarey.artouchpad.ui
 
 import android.os.SystemClock
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.PatternMatcher
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.systemGestureExclusion
@@ -33,6 +39,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +47,7 @@ import au.com.michaelcarey.artouchpad.MultiFingerTapTracker
 import au.com.michaelcarey.artouchpad.TouchGestureEngine
 import au.com.michaelcarey.artouchpad.TouchMode
 import au.com.michaelcarey.artouchpad.TouchpadViewModel
+import au.com.michaelcarey.artouchpad.TouchpadBuild
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -55,7 +63,8 @@ private val TEXT_DIM = Color(0xFF90A4AE)
 
 // Fullscreen touchpad with an invisible bottom strip reserved for Android navigation.
 @Composable
-fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean, onShowPhoneOverview: () -> Unit) {
+internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean,
+    onSwitchBuild: (TouchpadBuild) -> Unit, onShowPhoneOverview: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val haptic = LocalHapticFeedback.current
     val feedbackScope = rememberCoroutineScope()
@@ -63,7 +72,7 @@ fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean, onSho
         OrientationCalibrationScreen(onCancel = { viewModel.finishOrientationCalibration() },
             onSave = viewModel::finishOrientationCalibration)
     } else if (state.showSettings && settingsOnPhone) {
-        Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel) }
+        Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel, onSwitchBuild) }
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)
             // Cover the bottom strip too so launchers can suppress horizontal quick-switch.
@@ -128,7 +137,8 @@ fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean, onSho
 }
 
 @Composable
-fun TouchpadSettings(viewModel: TouchpadViewModel, nonFocusable: Boolean = false) {
+internal fun TouchpadSettings(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBuild) -> Unit,
+    nonFocusable: Boolean = false) {
     val state by viewModel.state.collectAsState()
     // Observe other players/hardware buttons only while settings is composed. Closing or
     // backgrounding settings cancels this work; no permanent polling of media sessions.
@@ -153,7 +163,9 @@ fun TouchpadSettings(viewModel: TouchpadViewModel, nonFocusable: Boolean = false
             onScrollSpeed = viewModel::setScrollSpeed, onNaturalScroll = viewModel::setNaturalScroll,
             onAxisRotation = viewModel::setAxisRotation, onDimDelay = viewModel::setDimDelay,
             onDexKeyboard = viewModel::setDexKeyboard, onDismiss = viewModel::closeSettings,
-            connectionControls = { ConnectionControls(viewModel) },
+            appControls = { ConnectionControls(viewModel) },
+            availableBuild = installedAlternativeBuild(),
+            onSwitchBuild = onSwitchBuild,
             onSpeedFinished = viewModel::persistInputSettings,
             extraControls = { ExtraSettings(viewModel, state) },
             mediaEnabled = state.touchpadInputEnabled,
@@ -162,6 +174,30 @@ fun TouchpadSettings(viewModel: TouchpadViewModel, nonFocusable: Boolean = false
             nonFocusable = nonFocusable,
         )
     }
+}
+
+@Composable
+private fun installedAlternativeBuild(): TouchpadBuild? {
+    val other = TouchpadBuild.alternative ?: return null
+    val context = LocalContext.current
+    var available by remember(context) { mutableStateOf(false) }
+    DisposableEffect(context) {
+        fun refresh() { available = other.launchIntent(context) != null }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) = refresh()
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+            addDataSchemeSpecificPart(other.packageId, PatternMatcher.PATTERN_LITERAL)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        refresh()
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return other.takeIf { available }
 }
 
 @Composable
@@ -259,13 +295,20 @@ private fun TouchpadSurface(
                             awaitPointerEventScope {
                                 while (true) {
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    timer?.cancel()
+                                    // Compose reports ACTION_CANCEL as already-consumed releases.
+                                    if (event.changes.none { it.pressed } &&
+                                        event.changes.any { it.previousPressed && it.isConsumed }) {
+                                        engine.cancel()
+                                        touchPoints = emptyList()
+                                        continue
+                                    }
                                     engine.setInputAllowed(enabled && !isPocketMode)
                                     val contacts = event.changes.map {
                                         MultiFingerTapTracker.Contact(it.id.value, it.position.x, it.position.y, it.pressed)
                                     }
                                     engine.event(event.changes.first().uptimeMillis, contacts,
                                         size.width.toFloat(), size.height.toFloat())
-                                    timer?.cancel()
                                     engine.nextDeadline?.let { deadline ->
                                         timer = scope.launch {
                                             delay((deadline - SystemClock.uptimeMillis()).coerceAtLeast(0))

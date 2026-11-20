@@ -18,10 +18,11 @@ import au.com.michaelcarey.artouchpad.ui.TouchpadSettings
 import au.com.michaelcarey.artouchpad.ui.theme.ARTouchpadTheme
 
 /** A touchable overlay that leaves the external task resumed, visible and keyboard-focused. */
-class SettingsOverlay(
+internal class SettingsOverlay(
     private val owner: ComponentActivity,
     val display: Display,
     private val viewModel: TouchpadViewModel,
+    private val onSwitchBuild: (TouchpadBuild) -> Unit,
 ) : Dialog(ContextThemeWrapper(owner.createDisplayContext(display)
     .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null), R.style.Theme_ARTouchpad)) {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,7 +44,7 @@ class SettingsOverlay(
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
-            setContent { ARTouchpadTheme { TouchpadSettings(viewModel, nonFocusable = true) } }
+            setContent { ARTouchpadTheme { TouchpadSettings(viewModel, onSwitchBuild, nonFocusable = true) } }
         }
         setContentView(content)
         setCanceledOnTouchOutside(false)

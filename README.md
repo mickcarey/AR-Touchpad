@@ -154,6 +154,8 @@ Prod and Debug install side by side:
 
 Settings, Shizuku permissions and virtual-mouse identities are separate. Backgrounding an app releases its virtual mouse and restores its keyboard policy. Kotlin packages, AIDL, JNI bindings and the Android namespace all use `au.com.michaelcarey.artouchpad`, with variant-specific application IDs and provider authorities.
 
+Debug shows a **Debug** badge beside the Settings title. When both builds are installed, tap the two-arrow icon beside **Information** to open the other build on the phone with its own saved settings. The icon works from the phone or glasses. Switching in both directions requires updating both builds.
+
 `prod` is non-debuggable. It uses the configured release key when `KEYSTORE_PATH` is provided, otherwise the local debug key for personal installs. `release` still requires release signing credentials. Changing a signing key prevents updating an existing install; do not uninstall to work around it. This namespace cleanup keeps the fork's existing application IDs and preference keys, so same-key updates retain its app data. The original author's app remains a separate installation; its data is not automatically migrated.
 
 Unit tests cover complete gesture sequences, input filtering and timing, profiles, display selection, key cleanup, keyboard-policy ownership, rotation, calibration, Pocket mode, and cursor pulse planning. Instrumentation tests exercise real preferences, settings UI, native mouse/zoom routing, cancellation, reconnect, failure recovery and keyboard routing on the connected device. See [testing and performance](docs/testing.md) for commands and measurement limits.

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <queries>
+        <package android:name="au.com.michaelcarey.artouchpad" />
+        <package android:name="au.com.michaelcarey.artouchpad.debug" />
+    </queries>
+
     <!-- Required to trigger the haptic feedback vibrator on click/right-click gestures. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Display-scoped wake lock that keeps the glasses awake while the touchpad is open

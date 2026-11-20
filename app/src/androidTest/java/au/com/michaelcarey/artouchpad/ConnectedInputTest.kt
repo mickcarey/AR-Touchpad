@@ -1,12 +1,15 @@
 package au.com.michaelcarey.artouchpad
 
 import android.app.ActivityOptions
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Display
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -119,6 +122,59 @@ class ConnectedInputTest {
             InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE && (it.x != hover.x || it.y != hover.y) }
         }
         assertFalse("An edge swipe opened settings", vm.state.value.showSettings)
+    }
+
+    @Test fun cancelledBottomEdgeDragReleasesAndNextSwipeMovesAtMinus90Degrees() =
+        checkCancelledBottomEdgeDrag(dragLock = true)
+
+    @Test fun cancelledBottomEdgeDragWithoutLockDoesNotCopyAtMinus90Degrees() =
+        checkCancelledBottomEdgeDrag(dragLock = false)
+
+    private fun checkCancelledBottomEdgeDrag(dragLock: Boolean) {
+        receiveInput()
+        var x = 0f
+        var edgeY = 0f
+        main.onActivity { activity ->
+            vm.closeSettings()
+            vm.setAxisRotation(AxisRotation.COUNTERCLOCKWISE_90)
+            vm.updateInputSettings { it.copy(holdMs = 300, dragLock = dragLock, autoCopy = true,
+                smoothing = Smoothing.OFF, sensitivity = 1f, precision = false) }
+            val decor = activity.window.decorView
+            x = decor.width / 2f
+            edgeY = decor.height - decor.rootWindowInsets
+                .getInsets(android.view.WindowInsets.Type.mandatorySystemGestures()).bottom - 2f
+        }
+        awaitPhoneFrame()
+        var downTime = 0L
+        fun touch(action: Int, atX: Float, atY: Float) {
+            main.onActivity { activity ->
+                val now = SystemClock.uptimeMillis()
+                if (action == MotionEvent.ACTION_DOWN) downTime = now
+                val event = MotionEvent.obtain(downTime, now, action, atX, atY, 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+            }
+        }
+        touch(MotionEvent.ACTION_DOWN, x, edgeY - 64)
+        SystemClock.sleep(400)
+        touch(MotionEvent.ACTION_MOVE, x, edgeY)
+        await("Long-press drag did not press the external mouse button") {
+            InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_DOWN }
+        }
+        touch(MotionEvent.ACTION_CANCEL, x, edgeY)
+        assertFalse("Android cancellation latched drag lock", vm.state.value.dragHeld)
+        await("Cancelled drag left the external mouse button down") {
+            InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_UP }
+        }
+        val release = InputProbeActivity.samples.last { it.action == MotionEvent.ACTION_UP }
+        touch(MotionEvent.ACTION_DOWN, x, edgeY - 64)
+        touch(MotionEvent.ACTION_MOVE, x + 40, edgeY - 64)
+        touch(MotionEvent.ACTION_UP, x + 40, edgeY - 64)
+        await("First fresh swipe did not move the external cursor upwards") {
+            InputProbeActivity.samples.any { it.receivedAtNanos > release.receivedAtNanos &&
+                it.action == MotionEvent.ACTION_HOVER_MOVE && it.y < release.y }
+        }
+        assertFalse("Cancelled drag copied the selection", InputProbeActivity.keys.any { it.first == KeyEvent.KEYCODE_C })
     }
 
     private fun awaitPhoneFrame() {
@@ -245,6 +301,46 @@ class ConnectedInputTest {
         }
         await("Overlay did not dismiss") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+    }
+
+    @Test fun switchFromGlassesSettingsLaunchesProdOnPhone() {
+        org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("buildSwitch") == "true")
+        assertNotNull("Install the Prod APK on the test emulator", TouchpadBuild.Prod.launchIntent(context))
+        receiveInput()
+        val externalDisplay = vm.state.value.targetDisplay!!.id
+        val automation = instrumentation.uiAutomation
+        val info = automation.serviceInfo
+        val originalFlags = info.flags
+        try {
+            info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            automation.serviceInfo = info
+            main.onActivity { vm.openSettings() }
+            var button: AccessibilityNodeInfo? = null
+            fun switchLabel(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+                if (node == null) return null
+                if (node.contentDescription?.toString() == "Switch to Prod") return node
+                for (i in 0 until node.childCount) switchLabel(node.getChild(i))?.let { return it }
+                return null
+            }
+            await("No switch to Prod on the external display") {
+                val windows = automation.windowsOnAllDisplays[externalDisplay].orEmpty()
+                val label = windows.mapNotNull { it.root }.filter { it.packageName == context.packageName }
+                    .firstNotNullOfOrNull(::switchLabel)
+                button = generateSequence(label) { it.parent }.firstOrNull { it.isClickable }
+                button != null
+            }
+            assertTrue(button!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            await("Prod did not open on the phone") {
+                automation.windowsOnAllDisplays[Display.DEFAULT_DISPLAY].orEmpty()
+                    .any { it.root?.packageName == TouchpadBuild.Prod.packageId }
+            }
+            assertFalse("Debug still owns the mouse", vm.mouse.isDisplayReady)
+            assertFalse("Debug settings stayed open", vm.state.value.showSettings)
+            assertTrue("Switching displaced the external app", InputProbeActivity.resumed)
+        } finally {
+            info.flags = originalFlags
+            automation.serviceInfo = info
+        }
     }
 
     @Test fun mediaSessionPlaybackStateAndCommandsUseTheSamePlayer() {
@@ -374,7 +470,7 @@ class ConnectedInputTest {
     @Test fun lostDeviceReportsFailureAndRetryRecoversWithoutRestartingShizuku() {
         val serviceField = ShizukuMouseController::class.java.getDeclaredField("service").apply { isAccessible = true }
         val service = serviceField.get(vm.mouse) as IMouseService
-        service.clearDisplay()
+        service.clearDisplay(null)
         await("Lost device remained marked ready") { !vm.state.value.mouseReady }
         assertTrue(vm.state.value.connectionMessage.contains("Retry", ignoreCase = true))
         main.onActivity { vm.retryConnection() }

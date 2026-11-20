@@ -169,6 +169,7 @@ internal class TouchGestureEngine(
     }
 
     fun cancel() {
+        blockedUntilLift = false
         clearHold(); cancelDrag(); four.cancel(); taps.cancelTap()
         previous = emptyList(); active = false; setMode(TouchMode.IDLE)
         four = FourFingerGesture(16f * density)
@@ -177,7 +178,8 @@ internal class TouchGestureEngine(
 
     /** External lifecycle/settings cancellation cannot turn trailing contacts into a new gesture. */
     fun invalidate() {
-        blockedUntilLift = blockedUntilLift || active
+        val stillPressed = blockedUntilLift || active
         cancel()
+        blockedUntilLift = stillPressed
     }
 }

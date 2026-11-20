@@ -13,27 +13,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import au.com.michaelcarey.artouchpad.R
 import au.com.michaelcarey.artouchpad.MediaState
+import au.com.michaelcarey.artouchpad.TouchpadBuild
 import kotlin.math.roundToInt
 
 /** Outside the settings scroll area. Compact windows keep the controls on a second header row. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SettingsHeader(
     mediaEnabled: Boolean,
     onMediaKey: (Int) -> Unit,
     onInformation: () -> Unit,
     mediaState: MediaState = MediaState(),
+    availableBuild: TouchpadBuild? = null,
+    onSwitchBuild: (TouchpadBuild) -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
         val inlineMedia = maxWidth >= 768.dp
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Settings", Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Medium)
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Settings", Modifier.align(Alignment.CenterVertically), fontSize = 28.sp,
+                        fontWeight = FontWeight.Medium)
+                    if (TouchpadBuild.current == TouchpadBuild.Debug) {
+                        Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                            Text("Debug", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
                 if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState)
                 // Equal side widths keep media centered in the whole header, independent of title/actions.
                 Row(if (inlineMedia) Modifier.weight(1f) else Modifier,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
+                    if (availableBuild != null) {
+                        IconButton(onClick = { onSwitchBuild(availableBuild) }) {
+                            Icon(painterResource(R.drawable.ic_switch_build),
+                                contentDescription = "Switch to ${availableBuild.name}")
+                        }
+                    }
                     IconButton(onClick = onInformation) {
                         Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
                     }

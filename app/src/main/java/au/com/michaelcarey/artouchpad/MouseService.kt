@@ -383,7 +383,7 @@ class MouseService(private val context: android.content.Context) : IMouseService
         readyTarget = null
         if (id == android.view.Display.DEFAULT_DISPLAY || id < 0 || width <= 0 || height <= 0) return
         if (getDisplayUniqueId(id) == null) return // display is still being registered or was removed
-        if (displayId != id || displayWidth != width || displayHeight != height) clearDisplay()
+        if (displayId != id || displayWidth != width || displayHeight != height) clearDisplay(null)
         displayId = id
         displayWidth = width
         displayHeight = height
@@ -464,7 +464,7 @@ class MouseService(private val context: android.content.Context) : IMouseService
         }
     }
 
-    @Synchronized override fun clearDisplay() {
+    @Synchronized override fun clearDisplay(completion: android.os.ResultReceiver?) {
         imePolicies.restoreAll()
         dismissModeFeedback()
         mainHandler.post { cursorVisibility?.restore() }
@@ -482,6 +482,7 @@ class MouseService(private val context: android.content.Context) : IMouseService
         accumScrollX = 0f; accumScrollY = 0f
         detentUnitsX = 0; detentUnitsY = 0
         Log.i(TAG, "external display detached; virtual mouse released")
+        completion?.send(android.app.Activity.RESULT_OK, null)
     }
 
     // Accumulates fractional deltas in accumX/Y; only emits REL_X/REL_Y events for the
