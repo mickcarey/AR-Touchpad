@@ -27,7 +27,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 | --- | --- |
 | 🖤 **Fullscreen & black touchpad** | A phone-sized touch surface with hidden system bars. Choose pure black for a screen that looks off while staying awake. An invisible bottom strip keeps Android Home and app-switcher gestures accessible. |
 | 🔒 **Pocket mode** | Keep watching while walking or exercising, without pocket bumps clicking or scrolling. Blocks trackpad input and hides the cursor; four-finger settings and unlock gestures still work. |
-| 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A responsive layout, teal-and-amber accents, and changes that save immediately. |
+| 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A non-dimming overlay keeps the external app visible and playing underneath. Responsive layout, teal-and-amber accents, and changes that save immediately. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
 | ✋ **Four-finger shortcuts** | Tap four fingers together to open or close settings; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
 | 🎨 **Drag-ready feedback** | After a configurable hold (600 ms by default), the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
@@ -42,7 +42,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 - **Copy after dragging:** off by default. Enable it for text-selection workflows. Cancellation always releases without copying.
 - **Drag lock:** optional; hold and drag, lift to reposition, then tap to release. Adding another finger cancels.
 - **Hold timing:** 300–1200 ms for right-click/drag readiness. Four-finger Pocket unlock remains 800 ms.
-- **Media:** icon-only previous track, play/pause, next track, volume down, mute/unmute and volume up buttons stay in the settings header while you scroll. Compact windows use a second header row. Track skipping depends on the active player. A three-finger media shortcut is blocked while Pocket mode is locked.
+- **Media:** previous track, play/pause, next track, volume down, mute/unmute and volume up stay in the settings header while you scroll. Play/pause and mute icons follow the observed player and music-volume state, including changes made elsewhere. A volume meter and percentage (or Muted) appear in settings on the external display; these buttons do not summon the phone volume panel. Compact windows use a second header row. Track skipping depends on the active player. A three-finger media shortcut is blocked while Pocket mode is locked.
 - **Display choice:** remember a display by its stable identity, with automatic fallback while it is absent.
 - **Recovery:** explicit connection status and Retry connection; Reset defaults clears preferences, profiles and calibration after an in-app confirmation.
 
@@ -52,7 +52,7 @@ Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers
 
 Need to change something? Tap four fingers to open settings in the glasses. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
-The phone stays awake: this is an input lock, not Android's screen lock. Android's own system gestures still apply. Settings fall back to the phone when the external display or mouse is unavailable.
+The phone stays awake: this is an input lock, not Android's screen lock. Android's own system gestures still apply. Settings use a non-focusable overlay so the external app keeps running without a dark backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
 
 ### Calibration that fits your grip
 
@@ -152,9 +152,9 @@ Prod and Debug install side by side:
 | Debug | `au.com.michaelcarey.artouchpad.debug` | AR Touchpad Debug |
 | Benchmark | `au.com.michaelcarey.artouchpad.benchmark` | AR Touchpad Benchmark |
 
-Settings, Shizuku permissions and virtual-mouse identities are separate. Backgrounding an app releases its virtual mouse and restores its keyboard policy. The Kotlin/JNI namespace remains `com.pgratz.artouchpad`; application IDs and provider authorities use the new domain.
+Settings, Shizuku permissions and virtual-mouse identities are separate. Backgrounding an app releases its virtual mouse and restores its keyboard policy. Kotlin packages, AIDL, JNI bindings and the Android namespace all use `au.com.michaelcarey.artouchpad`, with variant-specific application IDs and provider authorities.
 
-`prod` is non-debuggable. It uses the configured release key when `KEYSTORE_PATH` is provided, otherwise the local debug key for personal installs. `release` still requires release signing credentials. Changing a signing key prevents updating an existing install; do not uninstall to work around it. The old `com.pgratz.artouchpad` app remains a separate installation when migrating to the new ID.
+`prod` is non-debuggable. It uses the configured release key when `KEYSTORE_PATH` is provided, otherwise the local debug key for personal installs. `release` still requires release signing credentials. Changing a signing key prevents updating an existing install; do not uninstall to work around it. This namespace cleanup keeps the fork's existing application IDs and preference keys, so same-key updates retain its app data. The original author's app remains a separate installation; its data is not automatically migrated.
 
 Unit tests cover complete gesture sequences, input filtering and timing, profiles, display selection, key cleanup, keyboard-policy ownership, rotation, calibration, Pocket mode, and cursor pulse planning. Instrumentation tests exercise real preferences, settings UI, native mouse/zoom routing, cancellation, reconnect, failure recovery and keyboard routing on the connected device. See [testing and performance](docs/testing.md) for commands and measurement limits.
 
@@ -177,7 +177,7 @@ adb pair 192.168.1.10:37123
 The [installation script](scripts/install-wireless.ps1) finds `adb` on PATH or in the Android SDK, builds the selected APK, and installs with `adb install -r` to retain app data. It never automatically uninstalls an existing app.
 
 - Use `-PairAddress IP:PAIR_PORT -Address IP:CONNECT_PORT` to pair and install in one invocation.
-- The script defaults to Prod. Use `-Variant debug` or `-Variant benchmark` for isolated builds.
+- The script defaults to Debug. Use `-Variant benchmark` for profiling. Only use `-Variant prod` when explicitly updating the stable installation; routine development installs must leave Prod untouched.
 - Use `-SkipBuild` to install the last build, or `-Serial` to select a wireless device.
 - If discovery fails, check `adb mdns services` and `adb devices -l`, then reconnect using the current connection port—it can change.
 - A pairing port is not an installation port. For a signing mismatch, use a build signed with the existing app's key; uninstalling erases its data.
@@ -189,8 +189,8 @@ See Android's [wireless ADB documentation](https://developer.android.com/tools/a
 ## 💛 Credits & licence
 
 - **Original app:** [Paul Gratz's AR Touchpad](https://github.com/pgratz1/AR-Touchpad), originally developed for Viture XR glasses. The original virtual-mouse and Shizuku architecture made this fork possible.
-- **This fork:** [mickcarey / AR-Touchpad](https://github.com/mickcarey/AR-Touchpad).
+- **This fork:** maintained by **Michael Carey** at [mickcarey / AR-Touchpad](https://github.com/mickcarey/AR-Touchpad), using the `au.com.michaelcarey.artouchpad` namespace. The namespace reflects ownership and maintenance of this independently developed fork; the original project's authorship is credited here and in [NOTICE](NOTICE).
 - **Shizuku:** [shizuku.rikka.app](https://shizuku.rikka.app/), providing the privileged service connection.
 - **Settings palette:** dark ink, teal, and amber adapted from [Vanilla8](https://vanilla8.com/).
 
-Copyright 2026 Paul Gratz. Licensed under the [Apache License 2.0](LICENSE).
+Original work Copyright 2026 Paul Gratz. Modifications Copyright 2026 Michael Carey. Licensed under the [Apache License 2.0](LICENSE). Original copyright and licence notices are retained in the source.

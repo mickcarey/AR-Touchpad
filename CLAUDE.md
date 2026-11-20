@@ -6,12 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An Android app that turns a phone's touchscreen into a trackpad for Android desktop mode on Viture XR Pro glasses (or any USB-C DisplayPort display). Tested on Pixel 10 + Viture XR Pro running Android 16.
 
-- **Application IDs:** `au.com.michaelcarey.artouchpad` (Prod/release), with `.debug` and `.benchmark` suffixes. Kotlin/JNI namespace stays `com.pgratz.artouchpad`. Use `BuildConfig.APPLICATION_ID` for service components and package operations.
+- **Namespace:** `au.com.michaelcarey.artouchpad` for Kotlin, AIDL and JNI. **Application IDs:** `au.com.michaelcarey.artouchpad` (Prod/release), with `.debug` and `.benchmark` suffixes. Use `BuildConfig.APPLICATION_ID` for service components and package operations. Preserve original copyright notices and the attribution in `NOTICE` when modifying inherited code.
 - **Min SDK:** 34 (Android 14), target arm64-v8a only
 - **Language:** Kotlin + C++ (JNI)
 - **UI:** Jetpack Compose + Material3
 
 ## Build Commands
+
+Device installs default to Debug. Never install or update Prod/release unless Michael explicitly requests that variant; general install/deploy requests authorize Debug only. See `AGENTS.md`.
 
 Run from the project root (where `gradlew` lives):
 
@@ -43,7 +45,7 @@ Run `:app:testDebugUnitTest :app:lintDebug` for local checks. Device tests live 
 
 - Android Studio (provides SDK, NDK, Gradle)
 - NDK r25+ (installed via Android Studio SDK Manager)
-- `local.properties` at project root with `sdk.dir=/home/pgratz/Android/Sdk`
+- `local.properties` at project root with `sdk.dir` pointing to your Android SDK, or set `ANDROID_HOME`
 - For release builds, add signing keys to `local.properties`: `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
 
 Runtime on device:
@@ -83,7 +85,7 @@ app/src/main/
 
 **Reflection for key injection:** `InputManagerGlobal.injectInputEvent` and `InputEvent.setDisplayId` are hidden APIs. They're accessed via reflection, gated by HiddenApiBypass library, and lint suppression is set in `build.gradle.kts` (`BlockedPrivateApi`).
 
-**Shizuku UserService versioning:** `userServiceArgs.version(32)` in `ShizukuMouseController` is bumped whenever the `IMouseService.aidl` interface changes (adding methods) or the uinput device's declared capabilities change (the running service keeps the old device until it is replaced). AIDL method IDs are explicit integers — new methods must append to avoid breaking existing bindings. `destroy() = 16777114` is Shizuku's reserved destroy transaction ID; never renumber it.
+**Shizuku UserService versioning:** `userServiceArgs.version(34)` in `ShizukuMouseController` includes media state/control and external settings overlay access. Bump it whenever the `IMouseService.aidl` interface changes (including its descriptor or adding methods) or the uinput device's declared capabilities change (the running service keeps the old device until it is replaced). AIDL method IDs are explicit integers — new methods must append to avoid breaking existing bindings. `destroy() = 16777114` is Shizuku's reserved destroy transaction ID; never renumber it.
 
 **Cursor-to-display association:** `MouseService.setDisplay()` pins the uinput device to the target display, or Android routes the virtual mouse to the phone's screen. The device is found by scanning `InputDevice`s for the variant-specific `MouseService.DEVICE_NAME` after a 400 ms registration delay. `associateDeviceToDisplay()` tries three paths in order: `InputManagerGlobal.addUniqueIdAssociationByDescriptor(descriptor, displayUniqueId)`, the same method via the raw `IInputManager` binder (`mIm` field), then the legacy `setInputDeviceDisplayAssociation(descriptor, displayId)` for pre-Android-15 builds. The modern API is keyed by the display's **uniqueId string** (e.g. `"local:4636794538446137345"`), not its integer id, so `getDisplayUniqueId()` resolves it through `DisplayManagerGlobal.getDisplayInfo().uniqueId` by reflection. The legacy method no longer exists on Android 17, and because every lookup is wrapped in `runCatching`, an unsupported name fails silently — every path logs on success (`Log.i`), so `adb logcat -s MouseService:*` should always show one `associated uinput device to display N (local:…)` line per `setDisplay()`. Verify with `dumpsys input`: the device's `AssociatedDisplayUniqueIdByDescriptor` and its `Cursor Input Mapper` `DisplayId:` must both name the external display. Note the integer display id changes on every replug/desktop-mode restart (109 → 110 → 111 …) while the uniqueId stays constant.
 
@@ -119,3 +121,12 @@ If a future feature genuinely needs one, **never set `canPerformGestures`:** it 
 - A background variant releases its device and keyboard policy. Never select another variant's mouse by a shared name. Never hard-code the original app ID in runtime routing.
 - Native ELF LOAD alignment must be at least 16 KB. CMake sets `-Wl,-z,max-page-size=16384`.
 - `src/debug` contains the harmless input probe used by instrumentation (also included in Benchmark), plus the Debug-only DEV launcher resources. Prod/release must not include the probe or DEV ribbon.
+
+## External settings and media
+
+- `SettingsOverlay` uses `TYPE_APPLICATION_OVERLAY` with `FLAG_NOT_FOCUSABLE`, no dim-behind and zero dim amount. Never replace it with a Presentation: desktop tasks can be hidden/paused by Presentation windows. Dropdowns must remain non-focusable too.
+- Overlay access is enabled by the Shizuku service for `BuildConfig.APPLICATION_ID` only. If unavailable, use the phone settings fallback.
+- `MediaControls` runs under the shell attribution context. Shizuku does not run normal app bootstrap, so initialize missing media framework service managers before using MediaSessionManager. Keep volume independent of session initialization failures.
+- Volume buttons adjust `STREAM_MUSIC` with flags zero, never injected hardware volume keys or `FLAG_SHOW_UI`. The external settings header supplies the volume meter and mute feedback.
+- Playback buttons observe and control the same selected active media session; prefer playing sessions, otherwise the highest-priority session. No active session falls back to Android's remembered media receiver. Read state rather than optimistically flipping icons.
+- Media snapshots run on IO and refresh every 500 ms only while connected settings are composed. Closing/backgrounding settings cancels polling. Preserve the existing Pocket-mode guards.

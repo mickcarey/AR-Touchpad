@@ -1,0 +1,21 @@
+AR Touchpad — Michael Carey fork
+
+Based on AR Touchpad by Paul Gratz:
+https://github.com/pgratz1/AR-Touchpad
+Original work Copyright 2026 Paul Gratz.
+
+This fork is maintained by Michael Carey:
+https://github.com/mickcarey/AR-Touchpad
+Modifications Copyright 2026 Michael Carey.
+
+The original project provides the Android system cursor, Shizuku virtual-mouse
+architecture and external-display touchpad foundation. This fork adds and
+reworks fullscreen controls, Pocket mode, external settings, orientation
+calibration, input preferences, testing and reliability improvements.
+
+The fork's source packages, AIDL interface, JNI bindings and Android namespace
+have been migrated to au.com.michaelcarey.artouchpad. This identifies the
+independently maintained fork and does not replace credit for the original work.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+Original copyright and licence notices are retained in the source.

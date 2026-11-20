@@ -13,7 +13,7 @@ val localProps = Properties().also { props ->
 }
 
 android {
-    namespace = "com.pgratz.artouchpad"
+    namespace = "au.com.michaelcarey.artouchpad"
     compileSdk = 35
     testBuildType = providers.gradleProperty("deviceTestBuildType").getOrElse("debug")
 
