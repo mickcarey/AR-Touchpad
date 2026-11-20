@@ -93,6 +93,8 @@ interface IMouseService {
     boolean sendMediaControl(int keycode) = 22;
     // Allows only this build's settings overlay through the existing Shizuku grant.
     boolean enableSettingsOverlay() = 23;
+    oneway void setNotificationShadeBlocked(boolean blocked) = 24;
+    oneway void showPhoneOverview() = 25;
 
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;

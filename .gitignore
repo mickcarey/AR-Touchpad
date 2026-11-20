@@ -6,6 +6,11 @@ app/.cxx/
 local.properties
 *.jks
 *.keystore
+.env
+.env.*
+!.env.example
+adbkey
+adbkey.pub
 logcat.txt
 logcat.txt~
 cmd.txt

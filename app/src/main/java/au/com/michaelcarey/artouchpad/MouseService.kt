@@ -37,6 +37,21 @@ class MouseService(private val context: android.content.Context) : IMouseService
 
     private val mediaControls by lazy { MediaControls(context) }
 
+    // StatusBarManager owns a Binder token scoped to this service process. Android also
+    // releases its flags on process death, including an unexpected Shizuku shutdown.
+    private val statusBar by lazy { context.getSystemService("statusbar") }
+
+    override fun setNotificationShadeBlocked(blocked: Boolean) = asShell {
+        runCatching {
+            val manager = requireNotNull(statusBar)
+            val type = manager.javaClass
+            val flags = if (blocked) type.getField("DISABLE2_NOTIFICATION_SHADE").getInt(null) or
+                type.getField("DISABLE2_QUICK_SETTINGS").getInt(null) else 0
+            type.getMethod("disable2", Int::class.javaPrimitiveType).invoke(manager, flags)
+        }.onFailure { Log.w(TAG, "Could not update the phone notification shade", it) }
+        Unit
+    }
+
     private fun <T> asShell(block: () -> T): T {
         val identity = android.os.Binder.clearCallingIdentity()
         return try { block() } finally { android.os.Binder.restoreCallingIdentity(identity) }
@@ -288,7 +303,7 @@ class MouseService(private val context: android.content.Context) : IMouseService
     }.getOrNull()
 
     // Resolves the uniqueId string DisplayManagerGlobal uses to identify a display
-    // (e.g. "local:4619827259835644672"), required by addUniqueIdAssociationByDescriptor.
+    // (e.g. "local:<display-id>"), required by addUniqueIdAssociationByDescriptor.
     private fun getDisplayUniqueId(targetDisplayId: Int): String? = runCatching {
         val instance = dmgInstance ?: return@runCatching null
         val getInfo = dmgGetDisplayInfo ?: return@runCatching null
@@ -505,11 +520,14 @@ class MouseService(private val context: android.content.Context) : IMouseService
         injectChord(listOf(androidKeycode to 0))
     }
 
-    private fun injectChord(keys: List<Pair<Int, Int>>) {
+    override fun showPhoneOverview() {
+        injectChord(listOf(KeyEvent.KEYCODE_APP_SWITCH to 0), android.view.Display.DEFAULT_DISPLAY)
+    }
+
+    private fun injectChord(keys: List<Pair<Int, Int>>, target: Int = displayId) {
         val instance = imgInstance ?: return
         val inject = imgInjectEvent ?: return
         val setDisp = setDisplayIdMethod ?: return
-        val target = displayId
         val downTime = SystemClock.uptimeMillis()
         runCatching {
             sendKeyChord(keys) { key, down, meta ->

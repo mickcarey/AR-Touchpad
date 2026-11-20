@@ -56,6 +56,7 @@ class ShizukuMouseController {
     }
     private var service: IMouseService? = null
     private var pointerHidden = false
+    private var notificationShadeBlocked = false
     private var onStateChanged: (() -> Unit)? = null
     private val motionHandler = Handler(Looper.getMainLooper())
     private val movement = MotionBatcher(
@@ -77,7 +78,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(34)  // observed media state, silent volume and settings overlay
+        .version(36)  // phone notification shade and Overview
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -92,6 +93,7 @@ class ShizukuMouseController {
             resetPendingInput()
             service = IMouseService.Stub.asInterface(binder)
             runCatching { service?.setPointerHidden(pointerHidden) }
+            runCatching { service?.setNotificationShadeBlocked(notificationShadeBlocked) }
             isConnected = service != null
             connectionMessage = "Preparing mouse for the display…"
             startHealthChecks()
@@ -246,6 +248,14 @@ class ShizukuMouseController {
         // Visibility does not change the target or readiness. The next movement can be
         // sent immediately, ordered after this call on the same Binder.
     }
+
+    fun setNotificationShadeBlocked(blocked: Boolean) {
+        if (notificationShadeBlocked == blocked) return
+        notificationShadeBlocked = blocked
+        runCatching { service?.setNotificationShadeBlocked(blocked) }
+    }
+
+    fun showPhoneOverview() { runCatching { service?.showPhoneOverview() } }
 
     fun showModeFeedback(badge: android.graphics.Bitmap) { runCatching { service?.showModeFeedback(badge) } }
     fun dismissModeFeedback() { runCatching { service?.dismissModeFeedback() } }

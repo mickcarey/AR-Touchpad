@@ -133,26 +133,64 @@ class ConnectedInputTest {
         assertTrue("Phone surface did not draw", frames.await(5, java.util.concurrent.TimeUnit.SECONDS))
     }
 
+    @Test fun systemRoutedEdgeSwipesKeepMovingTheExternalCursor() {
+        receiveInput()
+        main.onActivity {
+            vm.closeSettings()
+            vm.updateInputSettings { it.copy(smoothing = Smoothing.OFF, sensitivity = 1f, precision = false) }
+        }
+        awaitPhoneFrame()
+        lateinit var bounds: android.graphics.Rect
+        main.onActivity { bounds = it.windowManager.currentWindowMetrics.bounds }
+        val automation = instrumentation.uiAutomation
+        automation.waitForIdle(500, 10000)
+        val width = bounds.width()
+        val height = bounds.height()
+        // Two top strokes in succession exercise a pull-down while transient bars may be visible.
+        val strokes = listOf(
+            intArrayOf(2, height / 3, 160, height / 3),
+            intArrayOf(width - 3, height * 2 / 3, width - 160, height * 2 / 3),
+            intArrayOf(width / 3, 2, width / 3, 160),
+            intArrayOf(width / 3, 2, width / 3, 160),
+        )
+        for ((x1, y1, x2, y2) in strokes) {
+            val previous = InputProbeActivity.samples.lastOrNull()
+            InputProbeActivity.samples.clear()
+            // Inject through InputDispatcher so SystemUI and the launcher can intercept.
+            val command = "input touchscreen -d 0 swipe $x1 $y1 $x2 $y2 180"
+            val output = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                automation.executeShellCommand(command)
+            ).bufferedReader().use { it.readText() }
+            assertTrue(output, output.isBlank())
+            await("Stroke from ($x1, $y1) lost the external pointer at $previous") {
+                InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE ||
+                    it.action == MotionEvent.ACTION_HOVER_ENTER }
+            }
+        }
+    }
+
     private fun fourFingerTap() {
-        val down = SystemClock.uptimeMillis()
         val properties = Array(4) { index -> MotionEvent.PointerProperties().apply {
             id = index; toolType = MotionEvent.TOOL_TYPE_FINGER
         } }
         val coordinates = Array(4) { index -> MotionEvent.PointerCoords().apply {
             x = 200f + index * 120f; y = 500f; pressure = 1f; size = 1f
         } }
-        fun send(action: Int, count: Int) {
-            main.onActivity { activity ->
-                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, count,
+        main.onActivity { activity ->
+            // A 70 ms tap regardless of how long the emulator takes to draw external settings.
+            val down = SystemClock.uptimeMillis() - 70
+            var time = down
+            fun send(action: Int, count: Int) {
+                val event = MotionEvent.obtain(down, time, action, count,
                     properties, coordinates, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
                 try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+                time += 10
             }
-            SystemClock.sleep(10)
+            send(MotionEvent.ACTION_DOWN, 1)
+            for (count in 2..4) send(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+            for (count in 4 downTo 2) send(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+            send(MotionEvent.ACTION_UP, 1)
         }
-        send(MotionEvent.ACTION_DOWN, 1)
-        for (count in 2..4) send(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
-        for (count in 4 downTo 2) send(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
-        send(MotionEvent.ACTION_UP, 1)
     }
 
     @Test fun fourFingerTapTogglesExternalSettingsAndRestoresPocketLock() {

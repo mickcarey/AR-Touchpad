@@ -19,6 +19,9 @@ package au.com.michaelcarey.artouchpad.ui
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,7 +55,7 @@ private val TEXT_DIM = Color(0xFF90A4AE)
 
 // Fullscreen touchpad with an invisible bottom strip reserved for Android navigation.
 @Composable
-fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = false) {
+fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean, onShowPhoneOverview: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val haptic = LocalHapticFeedback.current
     val feedbackScope = rememberCoroutineScope()
@@ -63,8 +66,10 @@ fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = fals
         Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel) }
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)
-            .windowInsetsPadding(WindowInsets.mandatorySystemGestures.only(WindowInsetsSides.Bottom))) {
-            TouchpadSurface(Modifier.fillMaxSize(), state.mouseReady,
+            // Cover the bottom strip too so launchers can suppress horizontal quick-switch.
+            .then(if (state.mouseReady) Modifier.systemGestureExclusion() else Modifier)) {
+            TouchpadSurface(Modifier.fillMaxSize()
+                .windowInsetsPadding(WindowInsets.mandatorySystemGestures.only(WindowInsetsSides.Bottom)), state.mouseReady,
                 viewModel::moveCursor, viewModel::performClick,
                 viewModel::performRightClick, viewModel::performThreeFingerAction,
                 viewModel::performScroll, viewModel::pinchZoom, viewModel::setTouchMode,
@@ -87,6 +92,26 @@ fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean = fals
                     }
                 },
                 showVisuals = !(state.blackTouchpad && state.mouseReady && state.externalDisplayConnected))
+            if (state.mouseReady) {
+                Spacer(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .windowInsetsBottomHeight(WindowInsets.mandatorySystemGestures)
+                    .pointerInput(onShowPhoneOverview) {
+                        val minTravel = 48.dp.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            do {
+                                val finger = awaitPointerEvent().changes.singleOrNull() ?: return@awaitEachGesture
+                                if (finger.isConsumed) return@awaitEachGesture
+                                if (finger.changedToUp()) {
+                                    val travel = finger.position - down.position
+                                    if (-travel.y >= minTravel && -travel.y > kotlin.math.abs(travel.x)) {
+                                        onShowPhoneOverview()
+                                    }
+                                }
+                            } while (finger.pressed)
+                        }
+                    })
+            }
             if (state.dragHeld && !state.blackTouchpad) Text("Drag locked · tap to release",
                 Modifier.align(Alignment.TopCenter).padding(24.dp), color = TEXT)
             if (!state.mouseReady) Column(

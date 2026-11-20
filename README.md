@@ -25,7 +25,7 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 
 | Feature | What it feels like |
 | --- | --- |
-| 🖤 **Fullscreen & black touchpad** | A phone-sized touch surface with hidden system bars. Choose pure black for a screen that looks off while staying awake. An invisible bottom strip keeps Android Home and app-switcher gestures accessible. |
+| 🖤 **Fullscreen & black touchpad** | A phone-sized touch surface with hidden system bars. Choose pure black for a screen that looks off while staying awake. Swipe up from the bottom edge to open the app switcher. |
 | 🔒 **Pocket mode** | Keep watching while walking or exercising, without pocket bumps clicking or scrolling. Blocks trackpad input and hides the cursor; four-finger settings and unlock gestures still work. |
 | 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A non-dimming overlay keeps the external app visible and playing underneath. Responsive layout, teal-and-amber accents, and changes that save immediately. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
@@ -52,7 +52,7 @@ Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers
 
 Need to change something? Tap four fingers to open settings in the glasses. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
-The phone stays awake: this is an input lock, not Android's screen lock. Android's own system gestures still apply. Settings use a non-focusable overlay so the external app keeps running without a dark backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
+The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running without a dark backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
 
 ### Calibration that fits your grip
 
@@ -74,7 +74,7 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Three-finger tap | Configurable: Moonlight capture (default), play/pause, precision, settings, or disabled |
 | Four-finger tap together | Open / close settings; also works in Pocket mode |
 | Four-finger hold for 0.8 seconds | Toggle Pocket mode |
-| Swipe up from the phone's bottom navigation edge | Android Home; swipe up and hold for the app switcher |
+| Swipe up from the phone's bottom navigation edge | Open the phone's app switcher |
 
 **Settings access:** four-finger tap toggles settings open and closed; there is no Done button. Phone-side settings also close with four-finger tap or Android Back. Edge swipes are ordinary cursor movement; they never open settings. When disconnected, use the visible Settings button.
 
@@ -89,7 +89,7 @@ Fixes and refinements made while developing this fork:
 | **Subtle cursor stalls** | Motion is batched on a 16 ms schedule, with pending movement flushed before button actions. One-way input calls, less per-motion logging, fewer UI state updates, and removal of a blocking click delay reduce work in the input path. |
 | **Taps registering twice** | Removed redundant synthetic clicks from double-tap handling so physical taps don't generate extra clicks or doubled letters. |
 | **No cursor when glasses connect after launch** | Display-aware mouse creation, setup acknowledgements, retries, and stale-result checks handle either startup order and reconnection. |
-| **Home / app switcher hard to reach** | Fullscreen mode reserves Android's bottom gesture area so navigation works without first revealing the system bars. |
+| **System gestures interrupt cursor movement** | The active touchpad requests the side edges for cursor input and blocks the notification shade. An upward swipe from the reserved bottom strip opens the phone's app switcher. |
 | **Black screen exposing a status header** | Refined the black touchpad cover and system-bar appearance to keep the phone surface consistently dark. |
 | **Pocket-mode settings on the wrong screen** | Settings use the external display when ready, temporarily allow cursor control, and restore the input lock on close. |
 | **A delay before moving in locked settings** | Pocket mode hides the cursor while keeping the virtual mouse connected on supported systems, avoiding device recreation when settings opens. |
@@ -165,10 +165,10 @@ Keep the PC and phone on the same Wi-Fi. Enable **Developer options → Wireless
 
 ```powershell
 # Use the pairing dialog's IP:port. adb prompts for its six-digit code.
-adb pair 192.168.1.10:37123
+adb pair 192.0.2.10:37123
 
 # Close the dialog. Use the DIFFERENT port on the main Wireless debugging page.
-.\scripts\install-wireless.ps1 -Address 192.168.1.10:40001 -Launch
+.\scripts\install-wireless.ps1 -Address 192.0.2.10:40001 -Launch
 
 # Later, when exactly one wireless device is connected:
 .\scripts\install-wireless.ps1 -Launch

@@ -24,6 +24,9 @@ import android.hardware.display.DisplayManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.WindowInsets
+import android.view.WindowInsetsAnimationControlListener
+import android.view.WindowInsetsAnimationController
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -76,6 +79,9 @@ class MainActivity : ComponentActivity() {
     private var dimScheduled = false
     private var settingsOverlay: SettingsOverlay? = null
     private var settingsOnPhone by mutableStateOf(false)
+    private var protectPhoneGestures = false
+    private var topEdgeBarControl: WindowInsetsAnimationController? = null
+    private var topEdgeStroke = false
 
     // FLAG_KEEP_SCREEN_ON only covers the phone's own display; this covers the glasses.
     private val glassesWakeLock by lazy { DisplayWakeLock(applicationContext) }
@@ -196,7 +202,12 @@ class MainActivity : ComponentActivity() {
             val state by viewModel.state.collectAsState()
             ARTouchpadTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TouchpadScreen(viewModel = viewModel, settingsOnPhone = settingsOnPhone)
+                    TouchpadScreen(viewModel, settingsOnPhone, onShowPhoneOverview = {
+                        // Overview can keep this activity resumed for its live preview.
+                        protectPhoneGestures = false
+                        viewModel.mouse.setNotificationShadeBlocked(false)
+                        viewModel.mouse.showPhoneOverview()
+                    })
                     // A draw-only black surface keeps the digitizer and gestures active.
                     // Phone-side recovery/settings must remain visible when disconnected.
                     val blackPad = state.blackTouchpad && state.mouseReady &&
@@ -218,10 +229,12 @@ class MainActivity : ComponentActivity() {
 
     private fun updateSystemBars() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            // Unlike sticky immersive mode, DEFAULT allows Home/Overview gestures
-            // directly while the navigation bar is hidden.
             val state = viewModel.state.value
-            systemBarsBehavior = if (state.pocketInputLocked && !settingsOnPhone)
+            val activePad = state.mouseReady && state.externalDisplayConnected &&
+                !settingsOnPhone && !state.calibratingOrientation
+            viewModel.mouse.setNotificationShadeBlocked(protectPhoneGestures && activePad)
+            // Sticky immersive allows gesture exclusion along the full height of both edges.
+            systemBarsBehavior = if (activePad)
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             isAppearanceLightNavigationBars = false
@@ -283,12 +296,53 @@ class MainActivity : ComponentActivity() {
     // or scroll keeps the screen lit. Activity.onUserInteraction() alone is not enough:
     // it only fires on the initial down, so a slow 30 s drag would dim mid-gesture.
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
-        when (ev?.actionMasked) {
-            MotionEvent.ACTION_DOWN -> pointerDown = true
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pointerDown = false
-        }
+        // Waking the pad can reset bar visibility. Do that before taking gesture control.
         noteInteraction()
+        when (ev?.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                pointerDown = true
+                if (!protectPhoneGestures && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    protectPhoneGestures = true
+                    updateSystemBars()
+                }
+                val state = viewModel.state.value
+                val decor = window.decorView
+                val top = decor.rootWindowInsets?.getInsets(WindowInsets.Type.mandatorySystemGestures())?.top ?: 0
+                if (ev.y < top && state.mouseReady && !settingsOnPhone && !state.calibratingOrientation) {
+                    topEdgeStroke = true
+                    window.insetsController?.controlWindowInsetsAnimation(
+                        WindowInsets.Type.statusBars(), -1, null, null, topEdgeListener)
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                pointerDown = false
+                finishTopEdgeStroke()
+            }
+        }
         return super.dispatchTouchEvent(ev)
+    }
+
+    // Keep control of the hidden status bar during a stroke that starts in its gesture
+    // inset. Otherwise SystemUI can reveal the bar and own the next stroke at the top.
+    private val topEdgeListener = object : WindowInsetsAnimationControlListener {
+        override fun onReady(controller: WindowInsetsAnimationController, types: Int) {
+            if (topEdgeStroke) {
+                topEdgeBarControl = controller
+                controller.setInsetsAndAlpha(controller.hiddenStateInsets, 0f, 0f)
+            } else controller.finish(settingsOnPhone || viewModel.state.value.calibratingOrientation)
+        }
+        override fun onFinished(controller: WindowInsetsAnimationController) {
+            if (topEdgeBarControl === controller) topEdgeBarControl = null
+        }
+        override fun onCancelled(controller: WindowInsetsAnimationController?) {
+            if (topEdgeBarControl === controller) topEdgeBarControl = null
+        }
+    }
+
+    private fun finishTopEdgeStroke() {
+        topEdgeStroke = false
+        topEdgeBarControl?.takeIf { it.isReady }?.finish(settingsOnPhone || viewModel.state.value.calibratingOrientation)
+        topEdgeBarControl = null
     }
 
     // Public Window.Callback override; Core's implementation carries a library-only
@@ -327,6 +381,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        protectPhoneGestures = true
         viewModel.refresh()
         noteInteraction()
         updateSystemBars()
@@ -335,6 +390,9 @@ class MainActivity : ComponentActivity() {
     // Drops the scrim and the pending dim so the touchpad never comes back to the
     // foreground already dark.
     override fun onPause() {
+        finishTopEdgeStroke()
+        protectPhoneGestures = false
+        viewModel.mouse.setNotificationShadeBlocked(false)
         super.onPause()
         idleHandler.removeCallbacks(dimRunnable)
         dimScheduled = false
