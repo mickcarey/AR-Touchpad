@@ -14,7 +14,7 @@ param(
     [switch]$SkipBuild,
     [switch]$Launch,
     [ValidateSet('prod', 'debug', 'benchmark')]
-    [string]$Variant = 'prod',
+    [string]$Variant = 'debug',
     [string]$AdbPath
 )
 $ErrorActionPreference = 'Stop'
@@ -94,7 +94,7 @@ try {
     }
     if ($Launch) {
         $packageId = 'au.com.michaelcarey.artouchpad' + $(if ($Variant -eq 'prod') { '' } else { ".$Variant" })
-        $result = Invoke-AdbChecked @('-s', $Serial, 'shell', 'am', 'start', '--display', '0', '-n', "$packageId/com.pgratz.artouchpad.MainActivity")
+        $result = Invoke-AdbChecked @('-s', $Serial, 'shell', 'am', 'start', '--display', '0', '-n', "$packageId/au.com.michaelcarey.artouchpad.MainActivity")
         Write-Host ($result -join [Environment]::NewLine)
         if (($result -join ' ') -match 'Error:|Exception') { throw 'App launch failed.' }
     }

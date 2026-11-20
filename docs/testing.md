@@ -31,6 +31,8 @@ The receiver is a private Debug/Benchmark activity, excluded from Prod/release. 
 
 The final Pixel 9 / XREAL One Pro run on 2026-11-20 passed **19 device tests**, including the media-header and settings-toggle follow-ups, with the performance method skipped as intended (20 discovered tests). The separate opt-in Benchmark performance test also passed. The phone-touch test waits for Compose frames after changing settings and accepts movement on either axis so saved rotation/calibration does not invalidate the test.
 
+The subsequent media/overlay Debug run on 2026-11-20 passed **23 device tests**, with the optional performance method skipped (24 discovered). It verifies observed play/pause and mute icons, media-session command routing, music-volume/mute changes without the phone's volume panel, and an external settings overlay that leaves the underlying app resumed and keyboard-focused with no dim-behind. The synthetic media session does not send commands to an unrelated player, and the volume test restores the prior music volume and mute state. A real overlay capture is written to the Debug app's external files as `settings-overlay.png` for visual review. Local checks passed 104 unit tests and lint with zero errors. Only Debug was installed; Prod was left untouched.
+
 ## Performance sample
 
 Benchmark uses a separate application ID, release behavior, and a local signing key. It is non-debuggable. Grant **AR Touchpad Benchmark** Shizuku permission before sampling.
@@ -39,8 +41,8 @@ Benchmark uses a separate application ID, release behavior, and a local signing 
 .\gradlew.bat :app:assembleBenchmark :app:assembleBenchmarkAndroidTest -PdeviceTestBuildType=benchmark
 adb install -r app/build/outputs/apk/benchmark/app-benchmark.apk
 adb install -r app/build/outputs/apk/androidTest/benchmark/app-benchmark-androidTest.apk
-adb shell am start --display 0 -n au.com.michaelcarey.artouchpad.benchmark/com.pgratz.artouchpad.MainActivity
-adb shell am instrument -w -r -e class 'com.pgratz.artouchpad.ConnectedInputTest#performanceSample' -e performance true au.com.michaelcarey.artouchpad.benchmark.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am start --display 0 -n au.com.michaelcarey.artouchpad.benchmark/au.com.michaelcarey.artouchpad.MainActivity
+adb shell am instrument -w -r -e class 'au.com.michaelcarey.artouchpad.ConnectedInputTest#performanceSample' -e performance true au.com.michaelcarey.artouchpad.benchmark.test/androidx.test.runner.AndroidJUnitRunner
 adb pull /sdcard/Android/data/au.com.michaelcarey.artouchpad.benchmark/files/performance.json
 ```
 
@@ -67,7 +69,7 @@ Black mode used more measured CPU/charge in this single run. The sample does not
 
 ## Packaging and icons
 
-Prod uses `au.com.michaelcarey.artouchpad`; Debug adds `.debug`, Benchmark adds `.benchmark`. Each has independent preferences, permissions, provider authority and mouse identity. The original `com.pgratz.artouchpad` installation is separate and its data is not automatically migrated or deleted.
+Prod uses `au.com.michaelcarey.artouchpad`; Debug adds `.debug`, Benchmark adds `.benchmark`. Each has independent preferences, permissions, provider authority and mouse identity. Kotlin, AIDL and JNI also use `au.com.michaelcarey.artouchpad`. The namespace cleanup preserves the fork's application IDs and preference keys for same-key updates. The original author's app is a separate installation and its data is not automatically migrated or deleted.
 
 Prod is non-debuggable and excludes the input probe and DEV resources. With no release signing configuration it uses the local debug key for personal installation; a distribution release requires the configured release key. Native libraries use 16 KB ELF alignment.
 

@@ -6,6 +6,8 @@
     <!-- Display-scoped wake lock that keeps the glasses awake while the touchpad is open
          (see DisplayWakeLock); FLAG_KEEP_SCREEN_ON only covers the phone's own display. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- External settings overlay; enabled for this variant through the Shizuku service. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"

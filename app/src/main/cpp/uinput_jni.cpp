@@ -1,4 +1,6 @@
 // Copyright 2026 Paul Gratz
+// Modifications Copyright 2026 Michael Carey
+// Modified for the Michael Carey fork, including the package namespace migration.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,7 +42,7 @@ extern "C" {
 // Returns: the fd on success (>= 0), or a negative errno on failure.
 // Must be called before any other nXxx functions.
 JNIEXPORT jint JNICALL
-Java_com_pgratz_artouchpad_UinputNative_nOpen(JNIEnv*, jclass) {
+Java_au_com_michaelcarey_artouchpad_UinputNative_nOpen(JNIEnv*, jclass) {
     if (g_fd >= 0) return g_fd;
     g_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (g_fd < 0) LOGE("open /dev/uinput failed errno=%d", errno);
@@ -54,7 +56,7 @@ Java_com_pgratz_artouchpad_UinputNative_nOpen(JNIEnv*, jclass) {
 // Os.ioctl(fd, req, value) variant — only ioctlInt(fd, req) (no value arg) remains.
 // Returns: the ioctl return value (0 on success, negative on error).
 JNIEXPORT jint JNICALL
-Java_com_pgratz_artouchpad_UinputNative_nIoctl(JNIEnv*, jclass, jint request, jint value) {
+Java_au_com_michaelcarey_artouchpad_UinputNative_nIoctl(JNIEnv*, jclass, jint request, jint value) {
     int ret = ioctl(g_fd, (unsigned long)request, (int)value);
     if (ret < 0) LOGE("ioctl(0x%x, %d) failed errno=%d", request, value, errno);
     return ret;
@@ -66,7 +68,7 @@ Java_com_pgratz_artouchpad_UinputNative_nIoctl(JNIEnv*, jclass, jint request, ji
 // name: device name visible in /proc/bus/input/devices and to Android InputReader.
 // Returns: bytes written on success (sizeof(uinput_user_dev)), negative on failure.
 JNIEXPORT jint JNICALL
-Java_com_pgratz_artouchpad_UinputNative_nWriteDevInfo(JNIEnv* env, jclass, jstring jname) {
+Java_au_com_michaelcarey_artouchpad_UinputNative_nWriteDevInfo(JNIEnv* env, jclass, jstring jname) {
     struct uinput_user_dev dev;
     memset(&dev, 0, sizeof(dev));
     const char* name = env->GetStringUTFChars(jname, nullptr);
@@ -88,7 +90,7 @@ Java_com_pgratz_artouchpad_UinputNative_nWriteDevInfo(JNIEnv* env, jclass, jstri
 // type/code/value: Linux input subsystem constants (EV_REL, REL_X, pixel delta, etc.).
 // Returns: bytes written on success (sizeof(input_event)), negative on failure.
 JNIEXPORT jint JNICALL
-Java_com_pgratz_artouchpad_UinputNative_nWriteEvent(JNIEnv*, jclass, jint type, jint code, jint value) {
+Java_au_com_michaelcarey_artouchpad_UinputNative_nWriteEvent(JNIEnv*, jclass, jint type, jint code, jint value) {
     struct input_event ev;
     memset(&ev, 0, sizeof(ev));
     struct timeval tv;
@@ -106,7 +108,7 @@ Java_com_pgratz_artouchpad_UinputNative_nWriteEvent(JNIEnv*, jclass, jint type, 
 // Sends UI_DEV_DESTROY to unregister the virtual device from the Linux input subsystem,
 // then closes g_fd. Safe to call when g_fd is already -1 (no-op guard).
 JNIEXPORT void JNICALL
-Java_com_pgratz_artouchpad_UinputNative_nClose(JNIEnv*, jclass) {
+Java_au_com_michaelcarey_artouchpad_UinputNative_nClose(JNIEnv*, jclass) {
     if (g_fd >= 0) {
         ioctl(g_fd, UI_DEV_DESTROY);
         close(g_fd);
