@@ -3,8 +3,9 @@ package au.com.michaelcarey.artouchpad.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -15,7 +16,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -32,20 +41,22 @@ internal fun AppPicker(catalog: List<AppShortcut>?, pinned: Set<String>, onCance
     var query by rememberSaveable { mutableStateOf("") }
     var selectedOnly by rememberSaveable { mutableStateOf(false) }
     var draft by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    val available = remember(catalog, pinned) { catalog.orEmpty().filter { it.id !in pinned } }
-    val selected = remember(draft, available) { available.map { it.id }.intersect(draft.toSet()) }
-    val matches = remember(available, query, selectedOnly, selected) {
+    val selected = remember(catalog, pinned, draft) {
+        catalog.orEmpty().map { it.id }.intersect(draft.toSet()) - pinned
+    }
+    val matches = remember(catalog, query, selectedOnly, selected) {
         val term = query.trim()
-        available.filter { app ->
+        catalog.orEmpty().filter { app ->
             (!selectedOnly || app.id in selected) && (app.label.contains(term, ignoreCase = true) ||
                 app.intent.component?.packageName?.contains(term, ignoreCase = true) == true)
         }
     }
+    val grayscale = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
     val keyboard = LocalSoftwareKeyboardController.current
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(28.dp))
-        .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
-        .imePadding().padding(12.dp)) {
-        Surface(modifier = Modifier.fillMaxSize().semantics { paneTitle = "Add apps" },
+        .imePadding()) {
+        Box(Modifier.matchParentSize().pointerInput(onCancel) { detectTapGestures { onCancel() } })
+        Surface(modifier = Modifier.padding(12.dp).fillMaxSize().semantics { paneTitle = "Add apps" },
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
             Column {
                 OutlinedTextField(value = query, onValueChange = { query = it },
@@ -66,21 +77,37 @@ internal fun AppPicker(catalog: List<AppShortcut>?, pinned: Set<String>, onCance
                             catalog == null -> "Loading installed apps…"
                             query.isNotBlank() -> "No matching apps"
                             selectedOnly -> "No apps selected"
-                            else -> "No more apps to pin"
+                            else -> "No installed apps"
                         }, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else key(query, selectedOnly) {
-                        LazyColumn(Modifier.fillMaxSize().testTag("app-results"),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)) {
+                        LazyVerticalGrid(columns = GridCells.Adaptive(96.dp), modifier = Modifier.fillMaxSize().testTag("app-results"),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(matches, key = { it.id }) { app ->
-                                val checked = app.id in selected
-                                Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Checkbox) {
+                                val alreadyPinned = app.id in pinned
+                                val checked = alreadyPinned || app.id in selected
+                                Column(Modifier.fillMaxWidth().toggleable(checked, enabled = !alreadyPinned, role = Role.Switch) {
                                     draft = ArrayList(if (it) draft + app.id else draft - app.id)
-                                }.padding(horizontal = 8.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Image(app.icon.asImageBitmap(), null, Modifier.size(40.dp))
-                                    Text(app.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                                    Checkbox(checked = checked, onCheckedChange = null)
+                                }.semantics { if (alreadyPinned) stateDescription = "Already pinned" }
+                                    .alpha(if (alreadyPinned) 0.55f else 1f).padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(Modifier.size(56.dp)) {
+                                        Image(app.icon.asImageBitmap(), null, Modifier.size(48.dp).align(Alignment.Center),
+                                            colorFilter = if (alreadyPinned) grayscale else null)
+                                        val track = when {
+                                            alreadyPinned -> MaterialTheme.colorScheme.outline
+                                            checked -> Color(0xFF56BB79)
+                                            else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                        }
+                                        Box(Modifier.align(Alignment.BottomEnd).size(23.dp, 14.dp)
+                                            .background(track, CircleShape).padding(2.dp),
+                                            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart) {
+                                            Spacer(Modifier.size(10.dp).background(if (checked && !alreadyPinned) Color(0xFF092B16)
+                                                else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
+                                        }
+                                    }
+                                    Text(app.label, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelLarge)
                                 }
                             }
                         }

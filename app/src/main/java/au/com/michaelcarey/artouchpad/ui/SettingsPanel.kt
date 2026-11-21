@@ -1,6 +1,7 @@
 package au.com.michaelcarey.artouchpad.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.platform.testTag
@@ -93,8 +94,15 @@ internal fun SettingsPanel(
             else -> onDismiss()
         }
     }
-    CompositionLocalProvider(LocalNonFocusableSettings provides nonFocusable) {
-
+    val closeTopLayer = {
+        when {
+            showInfo -> showInfo = false
+            removal != null -> removal = null
+            pickingApps -> pickingApps = false
+            else -> dismiss()
+        }
+    }
+    LaunchpadFrame(nonFocusable, closeTopLayer) {
         // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
         // Observe before child controls and only consume once four fingers claim the gesture.
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).pointerInput(density) {
@@ -115,20 +123,19 @@ internal fun SettingsPanel(
                 color = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column {
+                    if (TouchpadBuild.current == TouchpadBuild.Debug) {
+                        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                            Text("AR Touchpad · Debug build", Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
                         availableBuild, onSwitchBuild, indicators, settings, { settings = !settings })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (!settings) NowPlayingStrip(showTitle && mediaEnabled, mediaState)
                     if (settings) {
-                        BoxWithConstraints(Modifier.fillMaxWidth()) {
-                            val sideSpace = 56.dp
-                            Box(Modifier.fillMaxWidth().padding(start = if (maxWidth >= 520.dp) sideSpace else 0.dp,
-                                end = sideSpace)) {
-                                PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
-                            }
-                            PanelCloseButton("Close settings", { settings = false },
-                                Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 8.dp))
-                        }
+                        PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
                     }
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
@@ -224,6 +231,17 @@ internal fun SettingsPanel(
             if (pickingApps) appPicker { pickingApps = false }
             if (showInfo) SettingsInfoDialog(allDisplays, targetDisplay) { showInfo = false }
         }
+    }
+}
+
+@Composable
+private fun LaunchpadFrame(external: Boolean, onOutsideTap: () -> Unit, content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val dismiss by rememberUpdatedState(onOutsideTap)
+        Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { dismiss() } })
+        val panel = if (external) Modifier.size(minOf(1120.dp, maxWidth * 0.92f), minOf(780.dp, maxHeight * 0.9f))
+            else Modifier.fillMaxSize().padding(12.dp)
+        Box(panel) { CompositionLocalProvider(LocalNonFocusableSettings provides external, content = content) }
     }
 }
 

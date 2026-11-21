@@ -82,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(41)  // returns full now-playing metadata
+        .version(42)  // identifies the active Jellyfin session for richer playback titles
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -325,10 +325,16 @@ class ShizukuMouseController {
 
     fun mediaState(): MediaState {
         val bundle = runCatching { service?.mediaState }.getOrNull() ?: return MediaState()
+        val source = bundle.getString("sessionPackage")
+        val title = bundle.getString("title")
+        val subtitle = bundle.getString("subtitle")
+        val notice = if (isJellyfin(source)) JellyfinPlaybackListener.titleFor(
+            bundle.getParcelable("jellyfinSession", android.media.session.MediaSession.Token::class.java)) else null
+        val details = jellyfinDetails(title, subtitle, notice)
         return MediaState(
             playing = when (bundle.getInt("playing", -1)) { 1 -> true; 0 -> false; else -> null },
             muted = if (bundle.containsKey("muted")) bundle.getBoolean("muted") else null,
-            title = bundle.getString("title"), subtitle = bundle.getString("subtitle"),
+            title = details.first, subtitle = details.second, sourcePackage = source,
             volume = bundle.getInt("volume"), maxVolume = bundle.getInt("maxVolume"),
         )
     }

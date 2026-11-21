@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.Display
-import android.view.Gravity
 import android.view.Window
 import android.view.WindowManager
 import android.view.ContextThemeWrapper
@@ -75,9 +74,6 @@ internal class SettingsOverlay(
 
     override fun onStart() {
         super.onStart()
-        val metrics = context.resources.displayMetrics
-        window?.setGravity(Gravity.CENTER)
-        window?.setLayout(minOf((1120 * metrics.density).toInt(), (metrics.widthPixels * 0.92f).toInt()),
-            minOf((780 * metrics.density).toInt(), (metrics.heightPixels * 0.9f).toInt()))
+        window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
     }
 }

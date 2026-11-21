@@ -63,7 +63,7 @@ class SettingsUiTest {
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
         val inHeader = hasAnyAncestor(hasTestTag("settings-header"))
         if (TouchpadBuild.current == TouchpadBuild.Debug) {
-            compose.onNode(hasText("Debug") and inHeader).assertIsDisplayed()
+            compose.onNodeWithText("AR Touchpad · Debug build").assertIsDisplayed()
         }
         compose.onNode(hasContentDescription("Switch to Prod") and inHeader).assertIsDisplayed().performClick()
         compose.onNodeWithText("Switch to Prod").assertDoesNotExist()
@@ -107,11 +107,12 @@ class SettingsUiTest {
         val lastTab = compose.onNodeWithText("Connection").getUnclippedBoundsInRoot()
         assertTrue(firstTab.top >= header.bottom + 12.dp)
         assertEquals((header.left.value + header.right.value) / 2, (firstTab.left.value + lastTab.right.value) / 2, 1f)
-        val close = compose.onNodeWithContentDescription("Close settings")
-        assertTrue(close.getUnclippedBoundsInRoot().left >= lastTab.right)
-        close.performClick()
+        compose.onNodeWithContentDescription("Close settings").assertDoesNotExist()
+        val home = compose.onNodeWithContentDescription("Home")
+        assertEquals(cog, home.getUnclippedBoundsInRoot())
+        home.performClick()
         compose.onNodeWithTag("apps-pane").assertExists()
-        close.assertDoesNotExist()
+        home.assertDoesNotExist()
     }
     @Test fun dateLabelFollowsLocalTimeAndHourPreference() {
         val brisbane = java.time.ZonedDateTime.parse("2026-11-21T20:21:00+10:00[Australia/Brisbane]")
@@ -125,11 +126,12 @@ class SettingsUiTest {
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
         val visible = androidx.compose.runtime.mutableStateOf(false)
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val title = "Night train — Live from the concert hall, with the full ensemble and special guests"
         compose.setContent {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-                mediaEnabled = true, mediaState = MediaState(title = title, subtitle = "Kyoto"),
+                mediaEnabled = true, mediaState = MediaState(title = title, subtitle = "Kyoto", sourcePackage = context.packageName),
                 showTitle = visible.value, apps = { _, _ -> Text("Add App") }, appearance = { Text("Appearance") })
         }
         compose.onNodeWithText("Add App").assertIsDisplayed()
@@ -153,7 +155,10 @@ class SettingsUiTest {
         assertEquals((strip.left + strip.right).value / 2f, (artist.left + artist.right).value / 2f, 1f)
         assertEquals(1f, (strip.top - header.bottom).value, 0.5f)
         assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
-        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val sourceLabel = context.applicationInfo.loadLabel(context.packageManager).toString()
+        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(sourceLabel).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(compose.onNodeWithContentDescription(sourceLabel).getUnclippedBoundsInRoot().right <=
+            compose.onNodeWithText(title).getUnclippedBoundsInRoot().left)
         java.io.File(context.getExternalFilesDir(null), "now-playing-panel.png").outputStream().use {
             compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
@@ -161,13 +166,13 @@ class SettingsUiTest {
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithText("Add App").assertDoesNotExist()
         compose.onNodeWithTag("now-playing").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Close settings").performClick()
+        compose.onNodeWithContentDescription("Home").performClick()
         compose.onNodeWithText(title).assertIsDisplayed()
     }
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
         compose.onNodeWithContentDescription("Switch to Prod").assertDoesNotExist()
-        if (TouchpadBuild.current == TouchpadBuild.Debug) compose.onNodeWithText("Debug").assertIsDisplayed()
+        if (TouchpadBuild.current == TouchpadBuild.Debug) compose.onNodeWithText("AR Touchpad · Debug build").assertIsDisplayed()
         mediaKeys.forEach { (label, _) -> compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled() }
     }
     @Test fun mediaIconsFollowObservedPlaybackMuteAndVolumeChanges() {
@@ -252,6 +257,10 @@ class SettingsUiTest {
         compose.onNodeWithText("The app stays installed on your device.", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Remove").performClick()
         compose.runOnIdle { assertEquals(setOf(second.id), pins.value) }
+        compose.onNodeWithText("Add App").performClick()
+        search.performTextReplacement(second.label)
+        compose.onNode(hasText(second.label) and isToggleable()).assertIsOn().assertIsNotEnabled()
+        compose.onNodeWithText("Add App").assertIsNotEnabled()
     }
 
     @Test fun longAppLabelsHaveOneEllipsizedLine() {
@@ -296,6 +305,19 @@ class SettingsUiTest {
         }
         compose.runOnIdle { assertTrue(changes > 0); assertEquals(1, saves) }
     }
+    @Test fun phoneBackdropDismissesOnlyTheTopModal() {
+        var dismissals = 0
+        mediaPanel(360, onDismiss = { dismissals++ })
+        compose.onNodeWithContentDescription("Information").performClick()
+        fun tapBackdrop() = compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(3f, 60f)) }
+        tapBackdrop()
+        compose.onNodeWithContentDescription("Close information").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Information").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, dismissals) }
+        tapBackdrop()
+        compose.runOnIdle { assertEquals(1, dismissals) }
+    }
+
     @Test fun informationPanelExplainsFourFingerSettingsWithoutEdgeSwipe() {
         compose.setContent {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,

@@ -47,11 +47,18 @@ internal class MediaControls(context: Context) {
         runCatching {
             val controller = activeController()
             putString("sessionPackage", controller?.packageName)
+            if (isJellyfin(controller?.packageName)) putParcelable("jellyfinSession", controller?.sessionToken)
             val metadata = controller?.metadata
             val description = metadata?.description
             putString("title", description?.title?.toString())
-            putString("subtitle", description?.subtitle?.toString()?.takeIf { it.isNotBlank() }
-                ?: metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST))
+            val subtitle = description?.subtitle?.toString()?.takeIf { it.isNotBlank() }
+                ?: metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+            val details = if (isJellyfin(controller?.packageName)) {
+                listOfNotNull(subtitle, metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM),
+                    description?.description?.toString()).map(String::trim)
+                    .filter { it.isNotEmpty() && it != description?.title?.toString() }.distinct().joinToString(" · ")
+            } else subtitle
+            putString("subtitle", details)
             val playback = controller?.playbackState
             putInt("playing", when {
                 playback != null -> if (isPlaying(playback.state)) 1 else 0

@@ -8,7 +8,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
+import android.content.pm.PackageManager
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -39,17 +54,7 @@ internal fun SettingsHeader(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LaunchpadDate()
-                    if (TouchpadBuild.current == TouchpadBuild.Debug) {
-                        Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                            Text("Debug", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
+                Box(Modifier.weight(1f)) { LaunchpadDate() }
                 if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState)
                 // Equal side widths keep media centered in the whole header, independent of title/actions.
                 Row(if (inlineMedia) Modifier.weight(1f) else Modifier,
@@ -64,9 +69,10 @@ internal fun SettingsHeader(
                     IconButton(onClick = onInformation) {
                         Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
                     }
-                    IconToggleButton(checked = settingsOpen, onCheckedChange = { onSettings() }) {
-                        Icon(painterResource(R.drawable.ic_settings_cog), contentDescription = "Settings",
-                            tint = if (settingsOpen) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                    IconButton(onClick = onSettings) {
+                        Icon(painterResource(if (settingsOpen) R.drawable.ic_home else R.drawable.ic_settings_cog),
+                            contentDescription = if (settingsOpen) "Home" else "Settings",
+                            tint = if (settingsOpen) Color.White else LocalContentColor.current)
                     }
                 }
             }
@@ -135,16 +141,38 @@ internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
         enter = expandVertically(expandFrom = Alignment.Top),
         exit = shrinkVertically(shrinkTowards = Alignment.Top)) {
         Column(Modifier.fillMaxWidth().testTag("now-playing")) {
-            Column(Modifier.fillMaxWidth().heightIn(max = 156.dp).verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurface)
-                if (subtitle.isNotEmpty() && subtitle != title) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                val source = state.sourcePackage
+                if (source != null) key(source) { PlaybackAppIcon(source) }
+                Column(Modifier.fillMaxWidth().heightIn(max = 156.dp).verticalScroll(rememberScrollState())
+                    .padding(horizontal = if (source == null) 20.dp else 60.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    if (subtitle.isNotEmpty() && subtitle != title) {
+                        Text(subtitle, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
+    }
+}
+
+@Composable
+private fun PlaybackAppIcon(packageName: String) {
+    val pm = LocalContext.current.packageManager
+    var app by remember(pm, packageName) { mutableStateOf<Pair<ImageBitmap, String>?>(null) }
+    LaunchedEffect(pm, packageName) {
+        app = withContext(Dispatchers.IO) {
+            try {
+                val info = pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0))
+                info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() to info.loadLabel(pm).toString()
+            } catch (_: PackageManager.NameNotFoundException) { null }
+        }
+    }
+    app?.let { (icon, label) ->
+        Image(icon, contentDescription = label, modifier = Modifier.padding(start = 16.dp).size(32.dp))
     }
 }

@@ -467,10 +467,15 @@ class ConnectedInputTest {
             assertTrue(attrs.dimAmount in 0.05f..0.22f)
             assertEquals(vm.state.value.targetDisplay!!.id, overlay!!.display.displayId)
             captureOverlay(overlay!!, "settings-overlay.png")
-            vm.closeSettings()
         }
-        await("Overlay did not dismiss") { overlay?.isShowing == false }
+        InputProbeActivity.samples.clear()
+        val target = vm.state.value.targetDisplay!!.id
+        val bounds = context.createDisplayContext(overlay!!.display).resources.displayMetrics
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+            "input -d $target tap ${bounds.widthPixels / 100} ${bounds.heightPixels / 2}")).use { it.readBytes() }
+        await("Backdrop tap did not dismiss the launcher") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+        assertFalse("Dismissal tapped the external app", InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_DOWN })
     }
 
     private fun captureExternalPanel(filename: String) {
@@ -523,7 +528,8 @@ class ConnectedInputTest {
             captureExternalPanel("information-overlay.png")
             click { it.contentDescription?.toString() == "Close information" }
             await("Closing information did not restore the launcher") { node { it.text?.toString() == "Add App" } != null }
-            val shortcut = AppLauncher(InstalledApps).catalog(context).minBy { it.label.length }
+            val catalog = AppLauncher(InstalledApps).catalog(context)
+            val shortcut = catalog.minBy { it.label.length }
             main.onActivity { vm.updateLaunchpad { it.copy(pinned = it.pinned + shortcut.id) } }
             await("Pinned tile missing") { node { it.text?.toString() == shortcut.label || it.contentDescription?.toString() == shortcut.label } != null }
             val bounds = android.graphics.Rect()
@@ -547,7 +553,12 @@ class ConnectedInputTest {
             assertTrue(shortcut.id in vm.state.value.launchpad.pinned)
             click { it.text?.toString() == "Add App" }
             await("External app list not ready") {
-                node { it.isEditable } != null && node { it.className == "android.widget.CheckBox" } != null
+                node { it.isEditable } != null && node { it.text?.toString() == shortcut.label } != null
+            }
+            val candidate = catalog.first { it.id !in vm.state.value.launchpad.pinned }
+            click { it.text?.toString() == candidate.label }
+            await("New selection did not enable Add App") {
+                generateSequence(node { it.text?.toString() == "Add App" }) { it.parent }.any { it.isClickable && it.isEnabled }
             }
             captureExternalPanel("app-picker.png")
             click { it.isEditable }

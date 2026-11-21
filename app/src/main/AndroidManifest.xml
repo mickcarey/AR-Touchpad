@@ -41,6 +41,13 @@
             </intent-filter>
         </activity>
 
+        <service android:name=".JellyfinPlaybackListener"
+            android:exported="false" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Shizuku content provider: required by the Shizuku library to communicate with
              the Shizuku daemon. It handles the binder handshake so our app can bind
              MouseService as a shell-uid UserService without needing root. -->

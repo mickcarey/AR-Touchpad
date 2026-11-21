@@ -18,9 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
@@ -78,8 +76,7 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
                 AppTile("Add App", Modifier.clickable(role = Role.Button, onClick = onAdd)) {
                     Box(Modifier.size(iconSize).drawBehind {
                         val stroke = 1.5.dp.toPx()
-                        drawRoundRect(colors.primary.copy(alpha = 0.8f), Offset(stroke / 2, stroke / 2),
-                            Size(size.width - stroke, size.height - stroke), CornerRadius(14.dp.toPx()),
+                        drawCircle(colors.primary.copy(alpha = 0.8f), radius = (size.minDimension - stroke) / 2,
                             style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
                         val arm = 7.dp.toPx()
                         drawLine(colors.primary, center - Offset(arm, 0f), center + Offset(arm, 0f), stroke)
