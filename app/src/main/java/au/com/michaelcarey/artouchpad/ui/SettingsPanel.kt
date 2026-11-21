@@ -117,8 +117,8 @@ internal fun SettingsPanel(
                 Column {
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
                         availableBuild, onSwitchBuild, indicators, settings, { settings = !settings })
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     NowPlayingStrip(showTitle && mediaEnabled, mediaState)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (settings) {
                         BoxWithConstraints(Modifier.fillMaxWidth()) {
                             val sideSpace = 56.dp

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import au.com.michaelcarey.artouchpad.R
@@ -140,14 +141,14 @@ internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
     AnimatedVisibility(visible = enabled && title.isNotEmpty(),
         enter = expandVertically(expandFrom = Alignment.Top),
         exit = shrinkVertically(shrinkTowards = Alignment.Top)) {
-        Surface(Modifier.fillMaxWidth().testTag("now-playing"), color = MaterialTheme.colorScheme.surfaceContainer) {
-            Column(Modifier.heightIn(max = 156.dp).verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Now playing", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                if (subtitle.isNotEmpty() && subtitle != title) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        Column(Modifier.fillMaxWidth().testTag("now-playing").heightIn(max = 156.dp)
+            .verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface)
+            if (subtitle.isNotEmpty() && subtitle != title) {
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

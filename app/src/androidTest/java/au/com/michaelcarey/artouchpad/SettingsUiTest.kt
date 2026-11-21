@@ -138,13 +138,16 @@ class SettingsUiTest {
             val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             assertTrue(getLayout(layouts))
             assertFalse(layouts.single().hasVisualOverflow)
+            assertEquals(androidx.compose.ui.text.style.TextAlign.Center, layouts.single().layoutInput.style.textAlign)
         }
-        compose.onNodeWithText("Kyoto").assertIsDisplayed()
+        compose.onNodeWithText("Now playing").assertDoesNotExist()
+        val artist = compose.onNodeWithText("Kyoto").assertIsDisplayed().getUnclippedBoundsInRoot()
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
         val strip = compose.onNodeWithTag("now-playing").getUnclippedBoundsInRoot()
         assertEquals(header.left, strip.left)
         assertEquals(header.right, strip.right)
-        assertTrue(strip.top >= header.bottom)
+        assertEquals((strip.left + strip.right).value / 2f, (artist.left + artist.right).value / 2f, 1f)
+        assertEquals(header.bottom, strip.top)
         assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         java.io.File(context.getExternalFilesDir(null), "now-playing-panel.png").outputStream().use {
