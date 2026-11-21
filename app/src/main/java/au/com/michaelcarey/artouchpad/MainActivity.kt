@@ -348,7 +348,7 @@ class MainActivity : ComponentActivity() {
                 if (ev.y < top && state.mouseReady && !settingsOnPhone && !state.calibratingOrientation) {
                     topEdgeStroke = true
                     window.insetsController?.controlWindowInsetsAnimation(
-                        WindowInsets.Type.statusBars(), -1, null, null, topEdgeListener)
+                        WindowInsets.Type.systemBars(), -1, null, null, topEdgeListener)
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -359,8 +359,8 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    // Keep control of the hidden status bar during a stroke that starts in its gesture
-    // inset. Otherwise SystemUI can reveal the bar and own the next stroke at the top.
+    // A pull at the top can reveal both system bars together. Control both surfaces
+    // for this stroke so the transient bars do not take the next touch.
     private val topEdgeListener = object : WindowInsetsAnimationControlListener {
         override fun onReady(controller: WindowInsetsAnimationController, types: Int) {
             if (topEdgeStroke) {
@@ -368,18 +368,30 @@ class MainActivity : ComponentActivity() {
                 controller.setInsetsAndAlpha(controller.hiddenStateInsets, 0f, 0f)
             } else controller.finish(settingsOnPhone || viewModel.state.value.calibratingOrientation)
         }
-        override fun onFinished(controller: WindowInsetsAnimationController) {
+        override fun onFinished(controller: WindowInsetsAnimationController) = releaseControl(controller)
+        override fun onCancelled(controller: WindowInsetsAnimationController?) = releaseControl(controller)
+
+        private fun releaseControl(controller: WindowInsetsAnimationController?) {
             if (topEdgeBarControl === controller) topEdgeBarControl = null
-        }
-        override fun onCancelled(controller: WindowInsetsAnimationController?) {
-            if (topEdgeBarControl === controller) topEdgeBarControl = null
+            // SystemUI can take the bar back mid-drag. Reapply the hidden state after
+            // the current animation callback finishes if this stroke is still active.
+            if (topEdgeStroke) window.decorView.postOnAnimation {
+                if (topEdgeStroke) window.insetsController?.hide(WindowInsets.Type.systemBars())
+            }
         }
     }
 
     private fun finishTopEdgeStroke() {
+        if (!topEdgeStroke) return
         topEdgeStroke = false
         topEdgeBarControl?.takeIf { it.isReady }?.finish(settingsOnPhone || viewModel.state.value.calibratingOrientation)
         topEdgeBarControl = null
+        // A transient bar can outlive the stroke and intercept the next DOWN. Take
+        // control again and finish hidden as soon as Android hands the bar back.
+        if (protectPhoneGestures && !settingsOnPhone && !viewModel.state.value.calibratingOrientation) {
+            window.insetsController?.controlWindowInsetsAnimation(WindowInsets.Type.systemBars(),
+                0, null, null, topEdgeListener)
+        }
     }
 
     // Public Window.Callback override; Core's implementation carries a library-only
@@ -427,8 +439,8 @@ class MainActivity : ComponentActivity() {
     // Drops the scrim and the pending dim so the touchpad never comes back to the
     // foreground already dark.
     override fun onPause() {
-        finishTopEdgeStroke()
         protectPhoneGestures = false
+        finishTopEdgeStroke()
         viewModel.mouse.setNotificationShadeBlocked(false)
         super.onPause()
         idleHandler.removeCallbacks(dimRunnable)

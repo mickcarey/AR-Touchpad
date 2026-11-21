@@ -82,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(37)  // acknowledged display release for build switching
+        .version(38)  // suppress transient status bar contents while the phone is a touchpad
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
