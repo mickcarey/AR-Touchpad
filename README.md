@@ -19,7 +19,7 @@ Use your Android phone as a trackpad for an external monitor or display glasses.
 
 **Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/AR-Touchpad/fork), tweak it, and make it fit your own workflow!
 
-[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Build](#-build-and-check)
+[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Known issues](#known-issues) · [Build](#-build-and-check)
 
 ## 🌈 What this fork adds
 
@@ -125,6 +125,10 @@ Fixes and refinements made while developing this fork:
 | **Unnecessary background work** | Guard duplicate service connections, cache unchanged display targets, simplify idle timing, and clean up mouse/service resources on disconnect. |
 
 The main development and testing setup for this fork is **Pixel 9 + XREAL One Pro**. The [original project](https://github.com/pgratz1/AR-Touchpad) reports testing on **Pixel 10 + Viture XR Pro**. Compatibility with other phones and displays depends on their desktop-mode and input support.
+
+## Known issues
+
+- The **Settings** and **Information** panels within Launchpad need an overhaul of their layout and navigation.
 
 ## 🚀 Get going
 
