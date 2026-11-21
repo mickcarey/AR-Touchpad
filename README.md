@@ -67,8 +67,8 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Move one finger | Move the cursor |
 | Tap / double-tap | Click / double-click |
 | Two-finger tap | Right-click |
-| Hold for 600 ms, then release without dragging | Right-click |
-| Hold for 600 ms, then move | Drag; the cursor's size pulse and colour change show when it's ready |
+| Hold, then release without dragging | Right-click after the configured hold time (600 ms by default) |
+| Hold, then move | Begin dragging when the cursor pulses and changes colour |
 | Move two fingers | Scroll |
 | Pinch / spread | Zoom out / in |
 | Three-finger tap | Configurable: Moonlight capture (default), play/pause, precision, settings, or disabled |
@@ -76,7 +76,7 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Four-finger hold for 0.8 seconds | Toggle Pocket mode |
 | Swipe up from the phone's bottom navigation edge | Open the phone's app switcher |
 
-**Settings access:** four-finger tap toggles settings open and closed; there is no Done button. Phone-side settings also close with four-finger tap or Android Back. Edge swipes are ordinary cursor movement; they never open settings. When disconnected, use the visible Settings button.
+**Settings access.** Tap four fingers to open or close settings. Android Back also closes settings on the phone. When disconnected, use the visible Settings button.
 
 **Haptics are optional.** When system touch haptics are enabled, one pulse confirms locking and two confirm unlocking. Visual feedback also works with haptics off. The drag size pulse grows from your current native cursor size, up to Android's maximum; leave some room below maximum to see it.
 
@@ -89,8 +89,9 @@ Fixes and refinements made while developing this fork:
 | **Subtle cursor stalls** | Motion is batched on a 16 ms schedule, with pending movement flushed before button actions. One-way input calls, less per-motion logging, fewer UI state updates, and removal of a blocking click delay reduce work in the input path. |
 | **Taps registering twice** | Removed redundant synthetic clicks from double-tap handling so physical taps don't generate extra clicks or doubled letters. |
 | **No cursor when glasses connect after launch** | Display-aware mouse creation, setup acknowledgements, retries, and stale-result checks handle either startup order and reconnection. |
-| **System gestures interrupt cursor movement** | The active touchpad requests the side edges for cursor input and blocks the notification shade. An upward swipe from the reserved bottom strip opens the phone's app switcher. |
-| **Black screen exposing a status header** | Refined the black touchpad cover and system-bar appearance to keep the phone surface consistently dark. |
+| **System gestures interrupt cursor movement** | The active touchpad requests the side edges for cursor input. Swipe up from the reserved bottom strip to open the phone's app switcher. |
+| **Status bar during a top-edge drag** | The active touchpad hides the clock and status icons and blocks notification-shade expansion. Android can still briefly draw an empty shaded strip during a pull from the top edge. |
+| **Stuck drag after a system gesture** | If Android cancels a long-press drag, the touchpad releases the mouse button and skips auto-copy, including when drag lock is enabled. |
 | **Pocket-mode settings on the wrong screen** | Settings use the external display when ready, temporarily allow cursor control, and restore the input lock on close. |
 | **A delay before moving in locked settings** | Pocket mode hides the cursor while keeping the virtual mouse connected on supported systems, avoiding device recreation when settings opens. |
 | **The external app briefly going blank on lock/unlock** | Mode feedback uses an overlay without taking window focus, so the current app stays visible beneath the badge. |
@@ -113,7 +114,7 @@ The main development and testing setup for this fork is **Pixel 9 + XREAL One Pr
 
 1. Install and start [Shizuku](https://shizuku.rikka.app/). Its [setup guide](https://shizuku.rikka.app/guide/setup/) covers Wireless Debugging.
 2. Build and install AR Touchpad using the commands below.
-3. Open the app and grant its Shizuku request. Use **Connect** if the mouse does not connect automatically.
+3. Open the app and grant its Shizuku request. Use **Retry connection** if the mouse does not connect automatically.
 4. Connect your glasses or display and select **Desktop / Extended** mode. You can connect before opening the app, too.
 5. Tap four fingers to open settings and make yourself comfortable. ✨
 
@@ -125,26 +126,24 @@ Requires Android Studio with the Android SDK and NDK installed; JDK 17 is recomm
 git clone https://github.com/mickcarey/AR-Touchpad.git
 cd AR-Touchpad
 
-# Stable local build
-./gradlew assembleProd
-./gradlew installProd
-
-# Independent development build
+# Development install
 ./gradlew installDebug
+
+# Build the stable APK
+./gradlew assembleProd
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\gradlew.bat assembleProd
-.\gradlew.bat installProd
 .\gradlew.bat installDebug
+.\gradlew.bat assembleProd
 
 # Unit tests and Android lint
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug
 ```
 
-Prod and Debug install side by side:
+Prod and Debug install side by side. Debug also includes x86_64 support for device tests on the Pixel 9 emulator.
 
 | Build | App ID | Launcher name |
 | --- | --- | --- |
@@ -163,7 +162,7 @@ Unit tests cover complete gesture sequences, input filtering and timing, profile
 <details>
 <summary><strong>📡 Wireless installation from Windows</strong></summary>
 
-Keep the PC and phone on the same Wi-Fi. Enable **Developer options → Wireless debugging** on the phone, then open **Pair device with pairing code**.
+For first-time pairing, put the PC and phone on the same Wi-Fi. On the phone, open **Developer options → Wireless debugging → Pair device with pairing code**. A previously paired PC can go straight to the connection step.
 
 ```powershell
 # Use the pairing dialog's IP:port. adb prompts for its six-digit code.
@@ -171,6 +170,9 @@ adb pair 192.0.2.10:37123
 
 # Close the dialog. Use the DIFFERENT port on the main Wireless debugging page.
 .\scripts\install-wireless.ps1 -Address 192.0.2.10:40001 -Launch
+
+# Over Tailscale, substitute the phone's MagicDNS name and current connection port.
+.\scripts\install-wireless.ps1 -Address '<phone-magicdns-name>:<connection-port>' -Launch
 
 # Later, when exactly one wireless device is connected:
 .\scripts\install-wireless.ps1 -Launch
@@ -181,7 +183,7 @@ The [installation script](scripts/install-wireless.ps1) finds `adb` on PATH or i
 - Use `-PairAddress IP:PAIR_PORT -Address IP:CONNECT_PORT` to pair and install in one invocation.
 - The script defaults to Debug. Use `-Variant benchmark` for profiling. Only use `-Variant prod` when explicitly updating the stable installation; routine development installs must leave Prod untouched.
 - Use `-SkipBuild` to install the last build, or `-Serial` to select a wireless device.
-- If discovery fails, check `adb mdns services` and `adb devices -l`, then reconnect using the current connection port—it can change.
+- On the same Wi-Fi, check `adb mdns services` and `adb devices -l` if discovery fails. Over Tailscale, keep wireless debugging enabled on the phone and use its MagicDNS name directly. If the connection port changes, use the new port with the existing pairing.
 - A pairing port is not an installation port. For a signing mismatch, use a build signed with the existing app's key; uninstalling erases its data.
 
 See Android's [wireless ADB documentation](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi).
