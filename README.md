@@ -19,7 +19,7 @@ Use your Android phone as a trackpad for an external monitor or display glasses.
 
 **Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/AR-Touchpad/fork), tweak it, and make it fit your own workflow!
 
-[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Build](#-build-and-check)
+[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Known issues](#known-issues) · [Build](#-build-and-check)
 
 ## 🌈 What this fork adds
 
@@ -37,9 +37,9 @@ Use your Android phone as a trackpad for an external monitor or display glasses.
 
 ### Launchpad
 
-![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
+![Launchpad with three rows of demo apps and games and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
 
-The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to eight tiles per row, including the dashed **Add App** circle.
+The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to ten tiles per row, including the dashed **Add App** circle.
 
 - **Pin apps.** Choose **Add App** and type to filter the installed apps. Select as many as you want, then confirm at the bottom of the picker. A green tick marks each selection. Already-pinned apps are greyed out. When the on-screen keyboard opens on the same display, the launcher sits above it.
 - **Open or remove a shortcut.** Select a pinned app to open it on the chosen display, or on the phone when disconnected. To unpin it, right-click or long-press its icon and confirm **Remove shortcut**. The app stays installed on your phone.
@@ -125,6 +125,10 @@ Fixes and refinements made while developing this fork:
 | **Unnecessary background work** | Guard duplicate service connections, cache unchanged display targets, simplify idle timing, and clean up mouse/service resources on disconnect. |
 
 The main development and testing setup for this fork is **Pixel 9 + XREAL One Pro**. The [original project](https://github.com/pgratz1/AR-Touchpad) reports testing on **Pixel 10 + Viture XR Pro**. Compatibility with other phones and displays depends on their desktop-mode and input support.
+
+## Known issues
+
+- The **Settings** and **Information** panels within Launchpad need an overhaul of their layout and navigation.
 
 ## 🚀 Get going
 
