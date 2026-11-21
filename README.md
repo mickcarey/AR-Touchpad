@@ -37,7 +37,7 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ### Launchpad
 
-Tap four fingers to open Launchpad. The header shows local time in the phone’s 12/24-hour format, with the day and date underneath. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
+Tap four fingers to open Launchpad. The header shows local time in the phone’s 12/24-hour format, with the day and date underneath. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. A green check marks each new selection. The launcher fits above the on-screen keyboard when it opens on the same display. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
 
 Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to show the active player’s icon, title, and artist or subtitle below the header. Tap the title to return to the player or browser. Spotify album art and Jellyfin cover art appear on the right when the player supplies an image. For Jellyfin’s series name, episode number, or movie year, open **Jellyfin notification access** and allow the app on the phone. The app matches Jellyfin’s playback notification to the active media session. Tap outside the launcher to dismiss it, or use **Home** to return from Settings.
 

@@ -241,7 +241,7 @@ class MainActivity : ComponentActivity() {
             val state by viewModel.state.collectAsState()
             ARTouchpadTheme(state.launchpad) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TouchpadScreen(viewModel, settingsOnPhone, ::switchBuild, ::setRoomMeter, onShowPhoneOverview = {
+                    TouchpadScreen(viewModel, settingsOnPhone, ::switchBuild, ::setRoomMeter, ::clickTouchpad, onShowPhoneOverview = {
                         // Overview can keep this activity resumed for its live preview.
                         protectPhoneGestures = false
                         viewModel.mouse.setNotificationShadeBlocked(false)
@@ -368,6 +368,11 @@ class MainActivity : ComponentActivity() {
             if (settingsOnPhone || state.calibratingOrientation) show(WindowInsetsCompat.Type.systemBars())
             else hide(WindowInsetsCompat.Type.systemBars())
         }
+    }
+
+    internal fun clickTouchpad() {
+        if (viewModel.state.value.touchpadInputEnabled) settingsOverlay?.expectTouchpadClick()
+        viewModel.performClick()
     }
 
     private suspend fun showSettingsOnDisplay(displayId: Int?): Boolean {

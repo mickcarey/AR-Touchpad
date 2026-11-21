@@ -154,5 +154,6 @@ internal fun loadPlaybackCover(context: Context, source: String, metadata: Media
     if (uri.scheme != ContentResolver.SCHEME_CONTENT) return null
     val provider = uri.authority?.let { context.packageManager.resolveContentProvider(it, 0) }
     if (provider?.packageName != source) return null
+    if (isJellyfin(source) && uri.authority == "$source.image-provider") return JellyfinCover.read(context, uri, COVER_PIXELS)
     return context.contentResolver.loadThumbnail(uri, Size(COVER_PIXELS, COVER_PIXELS), null)
 }

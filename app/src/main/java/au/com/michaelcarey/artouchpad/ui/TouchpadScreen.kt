@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 // Fullscreen touchpad with an invisible bottom strip reserved for Android navigation.
 @Composable
 internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean,
-    onSwitchBuild: (TouchpadBuild) -> Unit, onRoomMeter: (Boolean) -> Unit, onShowPhoneOverview: () -> Unit) {
+    onSwitchBuild: (TouchpadBuild) -> Unit, onRoomMeter: (Boolean) -> Unit, onPrimaryClick: () -> Unit, onShowPhoneOverview: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val colors = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
@@ -74,7 +74,7 @@ internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boole
             .then(if (state.mouseReady) Modifier.systemGestureExclusion() else Modifier)) {
             TouchpadSurface(Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.mandatorySystemGestures.only(WindowInsetsSides.Bottom)), state.mouseReady,
-                viewModel::moveCursor, viewModel::performClick,
+                viewModel::moveCursor, onPrimaryClick,
                 viewModel::performRightClick, viewModel::performThreeFingerAction,
                 viewModel::performScroll, viewModel::pinchZoom, viewModel::setTouchMode,
                 viewModel::startSelectDrag, viewModel::endSelectDrag, viewModel::cancelSelectDrag,
@@ -134,7 +134,7 @@ internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boole
 @Composable
 internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBuild) -> Unit,
     onRoomMeter: (Boolean) -> Unit, nonFocusable: Boolean = false,
-    onPickerFocus: ((() -> Unit)?) -> Unit = {}) {
+    onPickerFocus: ((() -> Unit)?) -> Unit = {}, onOutsideHandler: (((() -> Unit)?) -> Unit)? = null) {
     val state by viewModel.state.collectAsState()
     val launcher = viewModel.launcher
     val catalogContext = LocalContext.current
@@ -180,7 +180,7 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
                 if (opened) viewModel.closeSettings()
                 else android.widget.Toast.makeText(catalogContext, "Playback app unavailable", android.widget.Toast.LENGTH_SHORT).show()
             },
-            nonFocusable = nonFocusable,
+            nonFocusable = nonFocusable, onOutsideHandler = onOutsideHandler,
             showTitle = state.launchpad.showTitle,
             indicators = {
                 if (state.pocketMode) Text("🔒  Pocket mode", style = MaterialTheme.typography.labelLarge)

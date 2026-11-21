@@ -82,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(43)  // playback launch intents and on-demand artwork
+        .version(44)  // shell provider access for Jellyfin artwork
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {

@@ -16,6 +16,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import au.com.michaelcarey.artouchpad.R
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.foundation.shape.CircleShape
@@ -53,8 +55,7 @@ internal fun AppPicker(catalog: List<AppShortcut>?, pinned: Set<String>, onCance
     }
     val grayscale = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
     val keyboard = LocalSoftwareKeyboardController.current
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(28.dp))
-        .imePadding()) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(28.dp))) {
         Box(Modifier.matchParentSize().pointerInput(onCancel) { detectTapGestures { onCancel() } })
         Surface(modifier = Modifier.padding(12.dp).fillMaxSize().semantics { paneTitle = "Add apps" },
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
@@ -86,7 +87,7 @@ internal fun AppPicker(catalog: List<AppShortcut>?, pinned: Set<String>, onCance
                             items(matches, key = { it.id }) { app ->
                                 val alreadyPinned = app.id in pinned
                                 val checked = alreadyPinned || app.id in selected
-                                Column(Modifier.fillMaxWidth().toggleable(checked, enabled = !alreadyPinned, role = Role.Switch) {
+                                Column(Modifier.fillMaxWidth().toggleable(checked, enabled = !alreadyPinned, role = Role.Checkbox) {
                                     draft = ArrayList(if (it) draft + app.id else draft - app.id)
                                 }.semantics { if (alreadyPinned) stateDescription = "Already pinned" }
                                     .alpha(if (alreadyPinned) 0.55f else 1f).padding(vertical = 6.dp),
@@ -94,16 +95,11 @@ internal fun AppPicker(catalog: List<AppShortcut>?, pinned: Set<String>, onCance
                                     Box(Modifier.size(56.dp)) {
                                         Image(app.icon.asImageBitmap(), null, Modifier.size(48.dp).align(Alignment.Center),
                                             colorFilter = if (alreadyPinned) grayscale else null)
-                                        val track = when {
-                                            alreadyPinned -> MaterialTheme.colorScheme.outline
-                                            checked -> Color(0xFF56BB79)
-                                            else -> MaterialTheme.colorScheme.surfaceContainerHighest
-                                        }
-                                        Box(Modifier.align(Alignment.BottomEnd).size(23.dp, 14.dp)
-                                            .background(track, CircleShape).padding(2.dp),
-                                            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart) {
-                                            Spacer(Modifier.size(10.dp).background(if (checked && !alreadyPinned) Color(0xFF092B16)
-                                                else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
+                                        if (checked) {
+                                            Icon(painterResource(R.drawable.ic_check), contentDescription = null,
+                                                modifier = Modifier.align(Alignment.BottomEnd).size(20.dp)
+                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape).padding(2.dp),
+                                                tint = if (alreadyPinned) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF63D88B))
                                         }
                                     }
                                     Text(app.label, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,

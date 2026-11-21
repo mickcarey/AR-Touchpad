@@ -83,6 +83,7 @@ internal fun SettingsPanel(
     recovery: @Composable () -> Unit = {},
     onOpenPlayer: (MediaState) -> Unit = {},
     loadArtwork: suspend (String) -> android.graphics.Bitmap? = { null },
+    onOutsideHandler: (((() -> Unit)?) -> Unit)? = null,
 ) {
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
     var pickingApps by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -105,6 +106,13 @@ internal fun SettingsPanel(
             removal != null -> removal = null
             pickingApps -> pickingApps = false
             else -> dismiss()
+        }
+    }
+    if (onOutsideHandler != null) {
+        val currentClose by rememberUpdatedState(closeTopLayer)
+        DisposableEffect(onOutsideHandler) {
+            onOutsideHandler { currentClose() }
+            onDispose { onOutsideHandler(null) }
         }
     }
     LaunchpadFrame(nonFocusable, closeTopLayer) {
@@ -243,12 +251,12 @@ internal fun SettingsPanel(
 
 @Composable
 private fun LaunchpadFrame(external: Boolean, onOutsideTap: () -> Unit, content: @Composable () -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
         val dismiss by rememberUpdatedState(onOutsideTap)
         Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { dismiss() } })
         val panel = if (external) Modifier.size(minOf(1120.dp, maxWidth * 0.92f), minOf(780.dp, maxHeight * 0.9f))
             else Modifier.fillMaxSize().padding(12.dp)
-        BoxWithConstraints(panel) {
+        BoxWithConstraints(panel.testTag("launcher-panel")) {
             val gutter = if (maxWidth >= 800.dp) 24.dp else 16.dp
             CompositionLocalProvider(LocalNonFocusableSettings provides external, LocalLaunchpadGutter provides gutter, content = content)
         }

@@ -293,6 +293,54 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertIsNotEnabled()
     }
 
+    @Test fun elevenQuickLaunchTilesFitAcrossTheWidePanel() {
+        val icon = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        val apps = (1..11).map { AppShortcut("test/$it", "App $it", icon, android.content.Intent()) }
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                Box(Modifier.width(1072.dp)) {
+                    au.com.michaelcarey.artouchpad.ui.PinnedApps(apps, apps.map { it.id }.toSet(), {}, {}, {})
+                }
+            }
+        }
+        val first = compose.onNodeWithText("Add App").getUnclippedBoundsInRoot()
+        assertEquals(first.top, compose.onNodeWithText("App 10").getUnclippedBoundsInRoot().top)
+        assertTrue(compose.onNodeWithText("App 11").getUnclippedBoundsInRoot().top > first.top)
+    }
+
+    @Test fun launcherBoundsFollowTheOnScreenKeyboard() {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+        val previous = shell("settings get secure show_ime_with_hard_keyboard")
+        lateinit var root: android.view.View
+        try {
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            compose.setContent {
+                root = androidx.compose.ui.platform.LocalView.current.rootView
+                SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
+                    false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                    apps = { open, _ -> androidx.compose.material3.Button(onClick = open) { Text("Choose apps") } },
+                    appPicker = { done -> au.com.michaelcarey.artouchpad.ui.AppPicker(emptyList(), emptySet(), done) {} })
+            }
+            fun panel() = compose.onNodeWithTag("launcher-panel", useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
+            val original = panel()
+            compose.onNodeWithText("Choose apps").performClick()
+            compose.onNodeWithTag("app-search").performClick()
+            val ime = android.view.WindowInsets.Type.ime()
+            compose.waitUntil(8000) {
+                val bottom = root.rootWindowInsets.getInsets(ime).bottom
+                bottom > 0 && panel().bottom <= root.height - bottom + 1f
+            }
+            assertTrue(panel().bottom < original.bottom)
+            compose.onNodeWithText("Cancel").assertIsDisplayed().performClick()
+            compose.waitUntil(8000) { panel() == original }
+        } finally {
+            if (previous == "null") shell("settings delete secure show_ime_with_hard_keyboard")
+            else shell("settings put secure show_ime_with_hard_keyboard $previous")
+        }
+    }
+
     @Test fun longAppLabelsHaveOneEllipsizedLine() {
         val label = "TeamViewer Remote Control"
         val shortcut = AppShortcut("test/long", label, android.graphics.Bitmap.createBitmap(10, 10,

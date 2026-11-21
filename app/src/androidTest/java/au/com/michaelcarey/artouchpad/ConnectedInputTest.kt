@@ -511,6 +511,27 @@ class ConnectedInputTest {
         assertFalse("Dismissal tapped the external app", InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_DOWN })
     }
 
+    @Test fun touchpadClicksOnTheExternalSystemBarsDismissTheLauncher() {
+        receiveInput()
+        for (dy in listOf(-20000f, 20000f)) {
+            main.onActivity {
+                vm.mouse.moveMouse(-20000f, dy)
+                vm.mouse.flushMovement()
+                vm.openSettings()
+            }
+            await("External launcher did not open") {
+                var visible = false
+                main.onActivity { activity ->
+                    val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
+                    visible = (field.get(activity) as? SettingsOverlay)?.isShowing == true
+                }
+                visible
+            }
+            main.onActivity { it.clickTouchpad() }
+            await("System bar click left the launcher open") { !vm.state.value.showSettings }
+        }
+    }
+
     private fun captureExternalPanel(filename: String) {
         main.onActivity { activity ->
             val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
@@ -534,6 +555,9 @@ class ConnectedInputTest {
         val automation = instrumentation.uiAutomation
         val info = automation.serviceInfo
         val flags = info.flags
+        fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+        val previousKeyboard = shell("settings get secure show_ime_with_hard_keyboard")
         fun find(node: AccessibilityNodeInfo?, match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
             if (node == null || match(node)) return node
             for (i in 0 until node.childCount) find(node.getChild(i), match)?.let { return it }
@@ -553,6 +577,8 @@ class ConnectedInputTest {
             assertTrue(action!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
         }
         try {
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            main.onActivity { vm.setDexKeyboard(false) }
             info.flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             automation.serviceInfo = info
             main.onActivity { vm.openSettings() }
@@ -594,8 +620,27 @@ class ConnectedInputTest {
                 generateSequence(node { it.text?.toString() == "Add App" }) { it.parent }.any { it.isClickable && it.isEnabled }
             }
             captureExternalPanel("app-picker.png")
+            fun pickerBounds() = android.graphics.Rect().also { bounds ->
+                node { it.paneTitle == "Add apps" }?.getBoundsInScreen(bounds)
+            }
+            val fullPicker = pickerBounds()
+            assertFalse(fullPicker.isEmpty)
             click { it.isEditable }
             await("Search field did not gain focus") { node { it.isEditable && it.isFocused } != null }
+            await("Launcher did not fit above the on-screen keyboard") {
+                val keyboard = automation.windowsOnAllDisplays[target].orEmpty().firstOrNull {
+                    it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+                if (keyboard != null) {
+                    val keyboardBounds = android.graphics.Rect().also(keyboard::getBoundsInScreen)
+                    val panel = pickerBounds()
+                    !panel.isEmpty && panel.bottom < fullPicker.bottom && panel.bottom < keyboardBounds.top
+                } else {
+                    // Android may route the IME to the phone. The monitor then keeps its full picker.
+                    automation.windowsOnAllDisplays[Display.DEFAULT_DISPLAY].orEmpty().any {
+                        it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                    } && pickerBounds() == fullPicker
+                }
+            }
             android.os.ParcelFileDescriptor.AutoCloseInputStream(
                 automation.executeShellCommand("input -d $target text zzznomatch")).use { it.readBytes() }
             await("External keyboard did not filter apps") { node { it.text?.toString() == "No matching apps" } != null }
@@ -605,6 +650,8 @@ class ConnectedInputTest {
             }
             assertTrue(vm.state.value.showSettings)
         } finally {
+            if (previousKeyboard == "null") shell("settings delete secure show_ime_with_hard_keyboard")
+            else shell("settings put secure show_ime_with_hard_keyboard $previousKeyboard")
             info.flags = flags
             automation.serviceInfo = info
         }
