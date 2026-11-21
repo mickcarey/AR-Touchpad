@@ -147,7 +147,7 @@ class SettingsUiTest {
         assertEquals(header.left, strip.left)
         assertEquals(header.right, strip.right)
         assertEquals((strip.left + strip.right).value / 2f, (artist.left + artist.right).value / 2f, 1f)
-        assertEquals(header.bottom, strip.top)
+        assertEquals(1f, (strip.top - header.bottom).value, 0.5f)
         assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         java.io.File(context.getExternalFilesDir(null), "now-playing-panel.png").outputStream().use {
@@ -156,6 +156,9 @@ class SettingsUiTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithText("Add App").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Close settings").performClick()
+        compose.onNodeWithText(title).assertIsDisplayed()
     }
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
