@@ -306,7 +306,7 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertIsNotEnabled()
     }
 
-    @Test fun pinnedRowsAreCentredAndWrapAtEightTilesOrTheAvailableWidth() {
+    @Test fun pinnedRowsAreCentredAndWrapAtTenTilesOrTheAvailableWidth() {
         val icon = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
         val apps = (1..11).map { AppShortcut("test/$it", "App $it", icon, android.content.Intent()) }
         val width = androidx.compose.runtime.mutableStateOf(1072.dp)
@@ -331,7 +331,7 @@ class SettingsUiTest {
                 assertEquals((row.first().left - panel.left).value, (panel.right - row.last().right).value, 1f)
             }
         }
-        checkRows(8)
+        checkRows(10)
         compose.runOnIdle { width.value = 360.dp }
         checkRows(3)
     }

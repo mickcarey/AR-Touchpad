@@ -39,7 +39,7 @@ Use your Android phone as a trackpad for an external monitor or display glasses.
 
 ![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
 
-The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to eight tiles per row, including the dashed **Add App** circle.
+The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to ten tiles per row, including the dashed **Add App** circle.
 
 - **Pin apps.** Choose **Add App** and type to filter the installed apps. Select as many as you want, then confirm at the bottom of the picker. A green tick marks each selection. Already-pinned apps are greyed out. When the on-screen keyboard opens on the same display, the launcher sits above it.
 - **Open or remove a shortcut.** Select a pinned app to open it on the chosen display, or on the phone when disconnected. To unpin it, right-click or long-press its icon and confirm **Remove shortcut**. The app stays installed on your phone.
