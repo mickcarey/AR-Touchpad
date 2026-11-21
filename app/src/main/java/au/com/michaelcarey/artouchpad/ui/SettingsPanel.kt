@@ -3,6 +3,7 @@ package au.com.michaelcarey.artouchpad.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -34,24 +35,8 @@ import androidx.compose.ui.window.PopupProperties
 
 private val LocalNonFocusableSettings = staticCompositionLocalOf { false }
 
-// Vanilla8's published brandColors at https://vanilla8.com/: ink #081211,
-// teal #014D67 / #154462, amber #E6AF52, orange #E45F02 and olive #55732B.
-// Adapted to dark settings surfaces with lighter text for contrast.
-private val SettingsColors = darkColorScheme(
-    primary = Color(0xFFE6AF52), onPrimary = Color(0xFF081211),
-    primaryContainer = Color(0xFF154462), onPrimaryContainer = Color(0xFFF4F0E6),
-    secondary = Color(0xFFE69402), onSecondary = Color(0xFF081211),
-    secondaryContainer = Color(0xFF014D67), onSecondaryContainer = Color(0xFFF4F0E6),
-    tertiary = Color(0xFFE45F02), onTertiary = Color(0xFF081211),
-    tertiaryContainer = Color(0xFF55732B), onTertiaryContainer = Color(0xFFFFF5DF),
-    background = Color(0xFF081211), surface = Color(0xFF081211),
-    surfaceContainer = Color(0xFF142624), surfaceContainerHigh = Color(0xFF1B3333),
-    surfaceVariant = Color(0xFF2E4545), onSurface = Color(0xFFF4F0E6),
-    onSurfaceVariant = Color(0xFFC2CCBF), outline = Color(0xFF82918A),
-    outlineVariant = Color(0xFF36504C), surfaceTint = Color(0xFFE6AF52),
-)
-
 /** Same controls on both displays; wide windows use two columns, phones use one. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SettingsPanel(
     sensitivity: Float,
@@ -86,13 +71,20 @@ internal fun SettingsPanel(
     nonFocusable: Boolean = false,
     availableBuild: TouchpadBuild? = null,
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
+    showTitle: Boolean = false,
+    indicators: @Composable () -> Unit = {},
+    dashboard: @Composable ColumnScope.() -> Unit = {},
+    appearance: @Composable () -> Unit = {},
+    recovery: @Composable () -> Unit = {},
 ) {
+    var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
+    var settings by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     val dismiss by rememberUpdatedState(onDismiss)
     val density = LocalDensity.current.density
     if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
     CompositionLocalProvider(LocalNonFocusableSettings provides nonFocusable) {
-    MaterialTheme(colorScheme = SettingsColors) {
+
         // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
         // Observe before child controls and only consume once four fingers claim the gesture.
         Box(Modifier.fillMaxSize().pointerInput(density) {
@@ -112,15 +104,38 @@ internal fun SettingsPanel(
                 shape = RoundedCornerShape(28.dp)) {
                 Column {
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
-                        availableBuild, onSwitchBuild)
+                        availableBuild, onSwitchBuild, showTitle, indicators)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = !settings, onClick = { settings = false }, label = { Text("Overview") })
+                        FilterChip(selected = settings, onClick = { settings = true }, label = { Text("Settings") })
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) { Text("×", Modifier.semantics { contentDescription = "Close Launchpad" },
+                            style = MaterialTheme.typography.headlineMedium) }
+                    }
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        val overviewScroll = rememberScrollState()
+                        val settingsScroll = key(section) { rememberScrollState() }
+                        Column(Modifier.fillMaxSize().verticalScroll(if (settings) settingsScroll else overviewScroll).padding(if (wide) 24.dp else 16.dp),
                             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                            appControls()
+                            if (!settings) {
+                                dashboard()
+                                appControls()
+                                return@Column
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (name in listOf("Personalise", "Controls", "Connection")) {
+                                    FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
+                                }
+                            }
+                            when (section) {
+                                "Personalise" -> { appearance(); return@Column }
+                                "Connection" -> { appControls(); recovery(); return@Column }
+                            }
                             val pointer: @Composable () -> Unit = {
-                                SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
+                                SettingsSection("Pointer", "Movement and scrolling", accent = MaterialTheme.colorScheme.secondary) {
                                     SpeedSetting("Cursor speed", sensitivity, 0.2f..3f, onSensitivity, onSpeedFinished)
                                     SpeedSetting("Scroll speed", scrollSpeed, 0.1f..2f, onScrollSpeed, onSpeedFinished)
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -147,14 +162,14 @@ internal fun SettingsPanel(
                             val display: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                     SettingsSection("Phone & keyboard", "Keep the touchpad comfortable to use") {
-                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes settings.", pocketMode, onPocketMode)
+                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes Launchpad.", pocketMode, onPocketMode)
                                         ToggleSetting("Black touchpad", "Keep the phone completely black while using the pad.", blackTouchpad, onBlackTouchpad)
                                         if (!blackTouchpad) SettingsChoice("Dim phone after", dimDelayLabel(dimDelaySec),
                                             "Only dims the phone. External display stays bright.",
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
                                         else SupportingText(if (pocketMode)
-                                            "The pad stays black. Settings and unlock gestures stay active."
-                                        else "Touch stays active. Four-finger tap opens/closes settings on your external display.")
+                                            "The pad stays black. Launchpad and unlock gestures stay active."
+                                        else "Touch stays active. Four-finger tap opens/closes Launchpad on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -188,7 +203,6 @@ internal fun SettingsPanel(
             if (showInfo) SettingsInfoDialog(allDisplays, targetDisplay) { showInfo = false }
         }
     }
-    }
 }
 
 @Composable
@@ -197,7 +211,7 @@ internal fun SupportingText(text: String) {
 }
 
 @Composable
-internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
+internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -295,7 +309,7 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    SettingsSection("Gesture guide", accent = Color(0xFFE45F02)) {
+                    SettingsSection("Gesture guide", accent = MaterialTheme.colorScheme.secondary) {
                         listOf(
                             "One-finger drag" to "Move cursor",
                             "One-finger tap / double-tap" to "Click / double-click",
@@ -305,7 +319,7 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             "Two-finger drag" to "Scroll",
                             "Two-finger pinch" to "Zoom page",
                             "Three-finger tap" to "Your chosen shortcut",
-                            "Four-finger tap" to "Open / close settings",
+                            "Four-finger tap" to "Open / close Launchpad",
                             "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
                         ).forEach { (gesture, action) ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -315,9 +329,9 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("Four-finger gestures work while locked. Settings open on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
+                        SupportingText("Four-finger gestures work while locked. Launchpad opens on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
                     }
-                    SettingsSection("Displays", accent = Color(0xFF55732B)) {
+                    SettingsSection("Displays", accent = MaterialTheme.colorScheme.secondary) {
                         if (allDisplays.isEmpty()) SupportingText("No displays detected.")
                         allDisplays.forEachIndexed { i, d ->
                             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -335,7 +349,7 @@ private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: Di
                                 }
                             }
                         }
-                        if (targetDisplay == null) SupportingText("Connect your glasses in Desktop / Extended mode.")
+                        if (targetDisplay == null) SupportingText("Connect a display in desktop or extended mode.")
                     }
                     SupportingText("A fork of the original AR Touchpad project.")
                 }

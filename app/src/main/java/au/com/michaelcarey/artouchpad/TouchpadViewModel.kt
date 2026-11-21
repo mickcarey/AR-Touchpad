@@ -49,6 +49,7 @@ const val DEFAULT_DIM_DELAY_SEC = 30
 data class DisplayInfo(val id: Int, val name: String, val width: Int, val height: Int, val uniqueId: String = name)
 
 data class TouchpadState(
+    val launchpad: LaunchpadPreferences = LaunchpadPreferences(),
     val media: MediaState = MediaState(),
     val smoothing: Smoothing = Smoothing.LIGHT,
     val precision: Boolean = false,
@@ -100,9 +101,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("touchpad_prefs", Context.MODE_PRIVATE)
 
+    internal val quietReference = MutableStateFlow<Int?>(null)
+    internal val roomLevel = MutableStateFlow(RoomLevel())
     private val settingsStore = InputSettingsStore(prefs)
 
     private val _state = MutableStateFlow(TouchpadState(
+        launchpad = LaunchpadPreferences.load(prefs),
         preferredDisplay = prefs.getString("preferred_display", null),
         selectedProfile = runCatching { UsageProfile.valueOf(prefs.getString("selected_profile", "DESKTOP")!!) }
             .getOrDefault(UsageProfile.DESKTOP),
@@ -443,6 +447,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(selectedProfile = profile) }
     }
     fun saveProfile(profile: UsageProfile) = settingsStore.save(_state.value.inputSettings(), profile)
+
+    fun updateLaunchpad(change: (LaunchpadPreferences) -> LaunchpadPreferences) {
+        val updated = change(_state.value.launchpad)
+        updated.save(prefs)
+        _state.update { it.copy(launchpad = updated) }
+    }
 
     fun resetDefaults() {
         resetTouchpadInput()

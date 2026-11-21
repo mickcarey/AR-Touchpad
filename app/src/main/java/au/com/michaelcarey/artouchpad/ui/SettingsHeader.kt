@@ -26,6 +26,8 @@ internal fun SettingsHeader(
     mediaState: MediaState = MediaState(),
     availableBuild: TouchpadBuild? = null,
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
+    showTitle: Boolean = false,
+    indicators: @Composable () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
         val inlineMedia = maxWidth >= 768.dp
@@ -33,7 +35,7 @@ internal fun SettingsHeader(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Settings", Modifier.align(Alignment.CenterVertically), fontSize = 28.sp,
+                    Text("Launchpad", Modifier.align(Alignment.CenterVertically), fontSize = 28.sp,
                         fontWeight = FontWeight.Medium)
                     if (TouchpadBuild.current == TouchpadBuild.Debug) {
                         Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
@@ -44,7 +46,7 @@ internal fun SettingsHeader(
                         }
                     }
                 }
-                if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState)
+                if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState, showTitle)
                 // Equal side widths keep media centered in the whole header, independent of title/actions.
                 Row(if (inlineMedia) Modifier.weight(1f) else Modifier,
                     verticalAlignment = Alignment.CenterVertically,
@@ -61,8 +63,9 @@ internal fun SettingsHeader(
                 }
             }
             if (!inlineMedia) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                MediaButtons(mediaEnabled, onMediaKey, mediaState)
+                MediaButtons(mediaEnabled, onMediaKey, mediaState, showTitle)
             }
+            indicators()
         }
     }
 }
@@ -78,8 +81,13 @@ private enum class MediaControl(val icon: Int, val description: String, val keyC
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MediaButtons(enabled: Boolean, onMediaKey: (Int) -> Unit, state: MediaState) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun MediaButtons(enabled: Boolean, onMediaKey: (Int) -> Unit, state: MediaState, showTitle: Boolean) {
+    Column(Modifier.widthIn(max = 288.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    if (showTitle && enabled && !state.title.isNullOrBlank()) {
+        Text(listOfNotNull(state.title, state.subtitle?.takeUnless { it.isBlank() || it == state.title }).joinToString(" · "),
+            style = MaterialTheme.typography.titleSmall, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
     FlowRow(horizontalArrangement = Arrangement.Center) {
         MediaControl.entries.forEach { control ->
             val (icon, description, key) = when (control) {

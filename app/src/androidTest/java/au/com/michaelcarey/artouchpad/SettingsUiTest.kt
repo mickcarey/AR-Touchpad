@@ -1,5 +1,7 @@
 package au.com.michaelcarey.artouchpad
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -58,6 +60,8 @@ class SettingsUiTest {
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
         val mediaCenter = (before.first().left.value + before.last().right.value) / 2f
         assertEquals("Media controls are not centered in the header", (header.left.value + header.right.value) / 2f, mediaCenter, 1f)
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Controls").performClick()
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
         val inHeader = hasAnyAncestor(hasTestTag("settings-header"))
         if (TouchpadBuild.current == TouchpadBuild.Debug) {
@@ -82,6 +86,23 @@ class SettingsUiTest {
 
     @Test fun phoneMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(360)
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
+    @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
+        val visible = androidx.compose.runtime.mutableStateOf(false)
+        compose.setContent {
+            SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
+                false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                mediaEnabled = true, mediaState = MediaState(title = "Night train", subtitle = "Kyoto"),
+                showTitle = visible.value, dashboard = { Text("Pinned apps") }, appearance = { Text("Appearance") })
+        }
+        compose.onNodeWithText("Pinned apps").assertIsDisplayed()
+        compose.onNodeWithText("Appearance").assertDoesNotExist()
+        compose.onNodeWithText("Night train · Kyoto").assertDoesNotExist()
+        compose.runOnIdle { visible.value = true }
+        compose.onNodeWithText("Night train · Kyoto").assertIsDisplayed()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Pinned apps").assertDoesNotExist()
+    }
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
         compose.onNodeWithContentDescription("Switch to Prod").assertDoesNotExist()
@@ -114,6 +135,27 @@ class SettingsUiTest {
         compose.onNodeWithContentDescription("Mute").assertIsDisplayed()
         compose.onNodeWithText("75%").assertIsDisplayed()
     }
+    @Test fun canPinAndRemoveAnInstalledLauncherActivity() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val app = AppLauncher(InstalledApps).catalog(context).groupBy { it.label }.values.first { it.size == 1 }.single()
+        val pins = androidx.compose.runtime.mutableStateOf(emptySet<String>())
+        compose.setContent {
+            androidx.compose.foundation.layout.Column(Modifier.verticalScroll(rememberScrollState())) {
+                au.com.michaelcarey.artouchpad.ui.PinnedApps(pins.value, null, { pins.value = it }, {})
+            }
+        }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Choose apps").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Choose apps").performClick()
+        compose.onNodeWithText(app.label).performScrollTo().performClick()
+        compose.onNodeWithText("Finish pinning").performScrollTo().performClick()
+        compose.onNodeWithText(app.label).assertExists()
+        compose.runOnIdle { assertEquals(setOf(app.id), pins.value) }
+        compose.onNodeWithText("Edit pins").performScrollTo().performClick()
+        compose.onNodeWithText(app.label).performScrollTo().performClick()
+        compose.onNodeWithText("Finish pinning").performScrollTo().performClick()
+        compose.onNodeWithText(app.label).assertDoesNotExist()
+    }
+
     @Test fun fourFingerTapClosesPhoneSettingsOnceWithoutDoneButton() {
         var dismissals = 0
         mediaPanel(360, enabled = false, onDismiss = { dismissals++ })
@@ -132,7 +174,9 @@ class SettingsUiTest {
                 false, false, false, false, emptyList(), null, { changes++ }, {}, {}, {}, {}, {}, {}, {}, {}, {},
                 { saves++ }, {})
         }
-        compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))[0].performTouchInput {
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Controls").performClick()
+        compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))[0].performScrollTo().performTouchInput {
             down(center); moveTo(centerRight - androidx.compose.ui.geometry.Offset(12f, 0f), 100); up()
         }
         compose.runOnIdle { assertTrue(changes > 0); assertEquals(1, saves) }
@@ -144,7 +188,7 @@ class SettingsUiTest {
         }
         compose.onNodeWithContentDescription("Information").performClick()
         compose.onNodeWithText("Four-finger tap", useUnmergedTree = true).assertExists()
-        compose.onNodeWithText("Open / close settings", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Open / close Launchpad", useUnmergedTree = true).assertExists()
         compose.onAllNodes(hasText("Settings fallback", substring = true)).assertCountEquals(0)
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithText("Done").assertDoesNotExist()

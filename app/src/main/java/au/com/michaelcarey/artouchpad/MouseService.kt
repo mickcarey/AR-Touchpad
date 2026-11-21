@@ -244,6 +244,17 @@ class MouseService(private val context: android.content.Context) : IMouseService
         }.getOrNull()
     }
 
+    // Same per-display dismissal used by SystemUI's auto-hide timer. A hidden
+    // app window cannot itself dismiss a transient bar owned by the system.
+    private val iwmHideTransientBars by lazy {
+        runCatching { iwmInstance?.javaClass?.getMethod("hideTransientBars", Int::class.javaPrimitiveType) }.getOrNull()
+    }
+
+    override fun hideTransientPhoneBars() = asShell {
+        runCatching { iwmHideTransientBars?.invoke(iwmInstance, android.view.Display.DEFAULT_DISPLAY) }
+        Unit
+    }
+
     // Create the mouse only after an external display exists. A mouse registered
     // before hotplug can retain the phone's pointer/display state in InputReader.
 

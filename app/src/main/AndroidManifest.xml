@@ -2,9 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="au.com.michaelcarey.artouchpad" />
         <package android:name="au.com.michaelcarey.artouchpad.debug" />
     </queries>
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- Required to trigger the haptic feedback vibrator on click/right-click gestures. -->
     <uses-permission android:name="android.permission.VIBRATE" />

@@ -16,6 +16,17 @@
 
 package au.com.michaelcarey.artouchpad
 
+import android.Manifest
+import android.content.Intent
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import android.os.Bundle
 import android.app.ActivityOptions
 import android.content.ActivityNotFoundException
@@ -76,6 +87,22 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: TouchpadViewModel by viewModels()
 
+    private val displayStatus by lazy { DisplayStatus(this) }
+    private val uatNotice by lazy { DisplayStatus(this, android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL,
+        "AR Touchpad UAT notice") }
+    private val noticePrefs by lazy { getSharedPreferences("uat_notice", Context.MODE_PRIVATE) }
+    private val pendingNotice = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.updateLaunchpad { it.copy(roomMeter = granted) }
+        if (!granted) Toast.makeText(this, "Allow microphone access in app permissions to use the room meter.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun setRoomMeter(enabled: Boolean) {
+        if (enabled && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        } else viewModel.updateLaunchpad { it.copy(roomMeter = enabled) }
+    }
+
     private val idleHandler = Handler(Looper.getMainLooper())
     private var isDimmed by mutableStateOf(false)
     private var pointerDown = false
@@ -87,6 +114,8 @@ class MainActivity : ComponentActivity() {
     private var protectPhoneGestures = false
     private var topEdgeBarControl: WindowInsetsAnimationController? = null
     private var topEdgeStroke = false
+    private var topEdgeDismissed = false
+    private val dismissTransientBars = Runnable { viewModel.mouse.hideTransientPhoneBars() }
 
     // FLAG_KEEP_SCREEN_ON only covers the phone's own display; this covers the glasses.
     private val glassesWakeLock by lazy { DisplayWakeLock(applicationContext) }
@@ -203,11 +232,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (BuildConfig.BUILD_TYPE == "debug") {
+            queueUatNotice(intent)
+            observeUatNotice()
+        }
+        observeDisplayStatus()
         setContent {
             val state by viewModel.state.collectAsState()
-            ARTouchpadTheme {
+            ARTouchpadTheme(state.launchpad) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TouchpadScreen(viewModel, settingsOnPhone, ::switchBuild, onShowPhoneOverview = {
+                    TouchpadScreen(viewModel, settingsOnPhone, ::switchBuild, ::setRoomMeter, onShowPhoneOverview = {
                         // Overview can keep this activity resumed for its live preview.
                         protectPhoneGestures = false
                         viewModel.mouse.setNotificationShadeBlocked(false)
@@ -228,6 +262,89 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (BuildConfig.BUILD_TYPE == "debug") queueUatNotice(intent)
+    }
+
+    private fun queueUatNotice(intent: Intent) {
+        val requested = intent.getBooleanExtra("uat_ready", false)
+        val saved = noticePrefs.getLong("pending", 0L)
+        if (!requested && saved == 0L) return
+        val installed = packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0)).lastUpdateTime
+        val pending = installed.takeIf { (requested || saved == installed) && noticePrefs.getLong("shown", 0L) != installed } ?: 0L
+        noticePrefs.edit().putLong("pending", pending).apply()
+        pendingNotice.value = pending
+    }
+
+    private fun observeUatNotice() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val targets = viewModel.state.map { it.targetDisplay?.id to it.mouseReady }.distinctUntilChanged()
+                combine(pendingNotice, targets, ::Pair).collectLatest { (installed, target) ->
+                    if (installed == 0L || installed == noticePrefs.getLong("shown", 0L)) return@collectLatest
+                    val display = target.first?.let { getSystemService(DisplayManager::class.java).getDisplay(it) } ?: return@collectLatest
+                    if (!android.provider.Settings.canDrawOverlays(this@MainActivity)) {
+                        if (!target.second) return@collectLatest
+                        withContext(Dispatchers.IO) { viewModel.mouse.enableSettingsOverlay() }
+                    }
+                    val installedAt = android.text.format.DateFormat.getTimeFormat(this@MainActivity).format(java.util.Date(installed))
+                    if (uatNotice.show(display, "AR Touchpad Debug ready for UAT · $installedAt", viewModel.state.value.launchpad)) {
+                        try {
+                            kotlinx.coroutines.delay(12_000)
+                            noticePrefs.edit().putLong("shown", installed).remove("pending").apply()
+                            pendingNotice.value = 0L
+                        } finally { uatNotice.hide() }
+                    }
+                }
+            }
+        }
+    }
+
+    private data class StatusOptions(val displayId: Int?, val locked: Boolean, val prefs: LaunchpadPreferences)
+
+    private fun observeDisplayStatus() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.state.map { it.launchpad.roomMeter && (it.showSettings || (it.mouseReady && it.externalDisplayConnected)) }
+                        .distinctUntilChanged().collectLatest { enabled ->
+                            viewModel.quietReference.value = null
+                            viewModel.roomLevel.value = RoomLevel()
+                            if (!enabled) return@collectLatest
+                            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                viewModel.updateLaunchpad { it.copy(roomMeter = false) }
+                                return@collectLatest
+                            }
+                            roomLevels(applicationContext).catch { error ->
+                                if (error is CancellationException) throw error
+                                emit(RoomLevel(status = "Phone mic unavailable"))
+                            }.collect { viewModel.roomLevel.value = it }
+                        }
+                }
+                try {
+                    viewModel.state.map { state ->
+                        val displayId = state.targetDisplay?.id?.takeIf { !state.showSettings && state.mouseReady }
+                        StatusOptions(displayId, state.pocketInputLocked, state.launchpad)
+                    }.distinctUntilChanged().collectLatest { options ->
+                        val display = options.displayId?.let { getSystemService(DisplayManager::class.java).getDisplay(it) }
+                        if (display == null || (!options.locked && !options.prefs.roomMeter)) {
+                            displayStatus.hide()
+                            return@collectLatest
+                        }
+                        if (!android.provider.Settings.canDrawOverlays(this@MainActivity)) {
+                            withContext(Dispatchers.IO) { viewModel.mouse.enableSettingsOverlay() }
+                        }
+                        if (options.prefs.roomMeter) combine(viewModel.roomLevel, viewModel.quietReference, ::Pair).collect { (level, quiet) ->
+                            val message = listOfNotNull("🔒".takeIf { options.locked }, level.label(quiet)).joinToString("   ")
+                            displayStatus.show(display, message, options.prefs)
+                        } else displayStatus.show(display, "🔒", options.prefs)
+                    }
+                } finally { displayStatus.hide() }
             }
         }
     }
@@ -267,7 +384,7 @@ class MainActivity : ComponentActivity() {
         if (!viewModel.state.value.showSettings || viewModel.state.value.targetDisplay?.id != displayId) return false
         var overlay: SettingsOverlay? = null
         return try {
-            val newOverlay = SettingsOverlay(this, display, viewModel, ::switchBuild)
+            val newOverlay = SettingsOverlay(this, display, viewModel, ::switchBuild, ::setRoomMeter)
             overlay = newOverlay
             newOverlay.setOnDismissListener {
                 if (settingsOverlay === newOverlay) {
@@ -344,11 +461,21 @@ class MainActivity : ComponentActivity() {
                 }
                 val state = viewModel.state.value
                 val decor = window.decorView
-                val top = decor.rootWindowInsets?.getInsets(WindowInsets.Type.mandatorySystemGestures())?.top ?: 0
+                // A hidden status bar can report a zero mandatory-gesture inset. Its reveal
+                // target still occupies the physical status-bar strip on the phone.
+                val top = decor.rootWindowInsets?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())?.top ?: 0
                 if (ev.y < top && state.mouseReady && !settingsOnPhone && !state.calibratingOrientation) {
                     topEdgeStroke = true
+                    topEdgeDismissed = false
                     window.insetsController?.controlWindowInsetsAnimation(
                         WindowInsets.Type.systemBars(), -1, null, null, topEdgeListener)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (topEdgeStroke && !topEdgeDismissed && ev.y >= window.decorView.rootWindowInsets
+                        .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top) {
+                    topEdgeDismissed = true
+                    window.decorView.postOnAnimation(dismissTransientBars)
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -384,11 +511,13 @@ class MainActivity : ComponentActivity() {
     private fun finishTopEdgeStroke() {
         if (!topEdgeStroke) return
         topEdgeStroke = false
+        window.decorView.removeCallbacks(dismissTransientBars)
         topEdgeBarControl?.takeIf { it.isReady }?.finish(settingsOnPhone || viewModel.state.value.calibratingOrientation)
         topEdgeBarControl = null
         // A transient bar can outlive the stroke and intercept the next DOWN. Take
         // control again and finish hidden as soon as Android hands the bar back.
         if (protectPhoneGestures && !settingsOnPhone && !viewModel.state.value.calibratingOrientation) {
+            viewModel.mouse.hideTransientPhoneBars()
             window.insetsController?.controlWindowInsetsAnimation(WindowInsets.Type.systemBars(),
                 0, null, null, topEdgeListener)
         }

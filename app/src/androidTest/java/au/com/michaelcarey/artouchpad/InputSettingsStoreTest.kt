@@ -17,6 +17,14 @@ class InputSettingsStoreTest {
     @Before fun before() { prefs.edit().clear().commit() }
     @After fun after() { prefs.edit().clear().commit() }
 
+    @Test fun launchpadPersistsIndependentlyOfInputProfilesAndKeepsEmptyClockList() {
+        assertEquals(LaunchpadPreferences(), LaunchpadPreferences.load(prefs))
+        val prefsToSave = LaunchpadPreferences("Sumi", 175, true, true, emptySet(), setOf("android/test"))
+        prefsToSave.save(prefs)
+        store.save(InputSettings.preset(UsageProfile.MOVIE))
+        assertEquals(prefsToSave, LaunchpadPreferences.load(prefs))
+    }
+
     @Test fun everyPreferenceSurvivesReopeningTheStore() {
         val settings = InputSettings(2.1f, 1.7f, false, Smoothing.STEADY, true, true, true,
             800, ThreeFingerAction.PRECISION, true, true)

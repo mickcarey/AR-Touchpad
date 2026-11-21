@@ -10,11 +10,12 @@ import android.view.Window
 import android.view.WindowManager
 import android.view.ContextThemeWrapper
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import au.com.michaelcarey.artouchpad.ui.TouchpadSettings
+import au.com.michaelcarey.artouchpad.ui.Launchpad
 import au.com.michaelcarey.artouchpad.ui.theme.ARTouchpadTheme
 
 /** A touchable overlay that leaves the external task resumed, visible and keyboard-focused. */
@@ -23,6 +24,7 @@ internal class SettingsOverlay(
     val display: Display,
     private val viewModel: TouchpadViewModel,
     private val onSwitchBuild: (TouchpadBuild) -> Unit,
+    private val onRoomMeter: (Boolean) -> Unit,
 ) : Dialog(ContextThemeWrapper(owner.createDisplayContext(display)
     .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null), R.style.Theme_ARTouchpad)) {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,11 +46,15 @@ internal class SettingsOverlay(
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
-            setContent { ARTouchpadTheme { TouchpadSettings(viewModel, onSwitchBuild, nonFocusable = true) } }
+            setContent {
+                ARTouchpadTheme(viewModel.state.collectAsState().value.launchpad) {
+                    Launchpad(viewModel, onSwitchBuild, onRoomMeter, nonFocusable = true)
+                }
+            }
         }
         setContentView(content)
         setCanceledOnTouchOutside(false)
-        window?.setTitle("AR Touchpad settings")
+        window?.setTitle("AR Touchpad Launchpad")
     }
 
     override fun onStart() {

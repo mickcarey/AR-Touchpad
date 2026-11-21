@@ -82,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(38)  // suppress transient status bar contents while the phone is a touchpad
+        .version(40)  // adds phone-only transient bar dismissal
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -267,6 +267,8 @@ class ShizukuMouseController {
 
     fun showPhoneOverview() { runCatching { service?.showPhoneOverview() } }
 
+    fun hideTransientPhoneBars() { runCatching { service?.hideTransientPhoneBars() } }
+
     fun showModeFeedback(badge: android.graphics.Bitmap) { runCatching { service?.showModeFeedback(badge) } }
     fun dismissModeFeedback() { runCatching { service?.dismissModeFeedback() } }
     fun setDragReady(ready: Boolean) { runCatching { service?.setDragReady(ready) } }
@@ -326,6 +328,7 @@ class ShizukuMouseController {
         return MediaState(
             playing = when (bundle.getInt("playing", -1)) { 1 -> true; 0 -> false; else -> null },
             muted = if (bundle.containsKey("muted")) bundle.getBoolean("muted") else null,
+            title = bundle.getString("title"), subtitle = bundle.getString("subtitle"),
             volume = bundle.getInt("volume"), maxVolume = bundle.getInt("maxVolume"),
         )
     }

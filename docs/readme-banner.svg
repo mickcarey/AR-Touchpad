@@ -14,7 +14,7 @@
   <text x="54" y="112" fill="#f2f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="700">AR Touchpad</text>
   <text x="56" y="165" fill="#65d6d1" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="600">Small screen. Big possibilities.</text>
   <text x="56" y="210" fill="#b7c8d8" font-family="Segoe UI, Arial, sans-serif" font-size="19">Your phone becomes the trackpad.</text>
-  <text x="56" y="239" fill="#b7c8d8" font-family="Segoe UI, Arial, sans-serif" font-size="19">Your glasses become the desktop.</text>
+  <text x="56" y="239" fill="#b7c8d8" font-family="Segoe UI, Arial, sans-serif" font-size="19">Launch apps on your monitor or glasses.</text>
   <g font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1">
     <rect x="56" y="278" width="140" height="32" rx="16" fill="#65d6d1"/>
     <text x="126" y="299" text-anchor="middle" fill="#111b2e">POINT + PLAY</text>

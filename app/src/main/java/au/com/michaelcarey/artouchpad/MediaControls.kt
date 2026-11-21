@@ -47,6 +47,9 @@ internal class MediaControls(context: Context) {
         runCatching {
             val controller = activeController()
             putString("sessionPackage", controller?.packageName)
+            val description = controller?.metadata?.description
+            putString("title", description?.title?.toString()?.take(256))
+            putString("subtitle", description?.subtitle?.toString()?.take(256))
             val playback = controller?.playbackState
             putInt("playing", when {
                 playback != null -> if (isPlaying(playback.state)) 1 else 0

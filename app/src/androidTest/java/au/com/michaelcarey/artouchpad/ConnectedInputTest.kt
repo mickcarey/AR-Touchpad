@@ -56,6 +56,7 @@ class ConnectedInputTest {
                 is Float -> edit.putFloat(key, value)
                 is Int -> edit.putInt(key, value)
                 is Long -> edit.putLong(key, value)
+                is Set<*> -> edit.putStringSet(key, value.filterIsInstance<String>().toSet())
             } }
             edit.commit()
         }
@@ -225,7 +226,7 @@ class ConnectedInputTest {
         }
     }
 
-    @Test fun topEdgePullsDoNotRevealThePhoneStatusBar() {
+    @Test fun topEdgePullsKeepStatusIconsHiddenAndShadeCollapsed() {
         receiveInput()
         main.onActivity {
             vm.closeSettings()
@@ -246,19 +247,45 @@ class ConnectedInputTest {
             statusHeight = decor.rootWindowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars()).top
         }
         assertTrue(statusHeight > 0)
-        fun statusBarPixels(): IntArray {
+        data class Sample(val icons: IntArray, val belowBar: IntArray)
+        val band = width / 3
+        fun sample(): Sample {
             val screen = requireNotNull(automation.takeScreenshot())
             try {
-                // Sample the clock and system icons, leaving the touch indicator out of the comparison.
-                val band = width / 3
-                return IntArray(2 * band * statusHeight).also { pixels ->
-                    screen.getPixels(pixels, 0, band, 0, 0, band, statusHeight)
-                    screen.getPixels(pixels, band * statusHeight, band, width - band, 0, band, statusHeight)
-                }
+                // Sample both icon areas, excluding the moving finger in the middle.
+                val icons = IntArray(2 * band * statusHeight)
+                screen.getPixels(icons, 0, 2 * band, 0, 0, band, statusHeight)
+                screen.getPixels(icons, band, 2 * band, width - band, 0, band, statusHeight)
+                val below = IntArray(band * statusHeight)
+                screen.getPixels(below, 0, band, 0, 2 * statusHeight, band, statusHeight)
+                return Sample(icons, below)
             } finally { screen.recycle() }
         }
         automation.waitForIdle(500, 5000)
-        val before = statusBarPixels()
+        val before = sample()
+        fun onlyBackgroundTint(pixels: IntArray): Boolean {
+            // SystemUI may tint the empty strip. Across one scanline, identical underlying
+            // grid pixels must still have the same colour. A clock or glyph breaks that mapping.
+            val colours = HashMap<Int, Int>()
+            for (i in pixels.indices) {
+                if (i % (band * 2) == 0) colours.clear()
+                val pixel = pixels[i]
+                val expected = colours.putIfAbsent(before.icons[i], pixel) ?: continue
+                for (shift in 0..16 step 8) {
+                    val channel = (pixel ushr shift) and 255
+                    if (kotlin.math.abs(channel - ((expected ushr shift) and 255)) > 3) return false
+                }
+            }
+            return true
+        }
+        // Positive control: a bright mark in the clock region must fail the icon check.
+        val visibleMark = before.icons.clone().apply { fill(android.graphics.Color.WHITE, band / 4, band / 4 + 12) }
+        assertFalse(onlyBackgroundTint(visibleMark))
+        fun assertClear(stage: String) {
+            val frame = sample()
+            assertTrue("Clock or status icons appeared $stage", onlyBackgroundTint(frame.icons))
+            assertArrayEquals("Notification shade covered the pad $stage", before.belowBar, frame.belowBar)
+        }
         repeat(2) { stroke ->
             val down = SystemClock.uptimeMillis()
             fun send(action: Int, y: Float) {
@@ -277,9 +304,9 @@ class ConnectedInputTest {
                     send(MotionEvent.ACTION_MOVE, 1f + step * 32f)
                 }
                 SystemClock.sleep(250)
-                assertTrue("Status bar appeared during top-edge drag ${stroke + 1}", before.contentEquals(statusBarPixels()))
+                assertClear("during top-edge drag ${stroke + 1}")
             } finally { send(MotionEvent.ACTION_UP, 257f) }
-            assertTrue("Status bar appeared after lifting on stroke ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            assertClear("after lifting on stroke ${stroke + 1}")
             await("Top-edge drag ${stroke + 1} did not move the external pointer") {
                 InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE }
             }
@@ -326,6 +353,93 @@ class ConnectedInputTest {
             assertEquals(!locked, vm.state.value.touchpadInputEnabled)
         }
     }
+    private fun externalStatusText(target: Int, title: String): String? {
+        var text: String? = null
+        instrumentation.runOnMainSync {
+            // Click-through windows can be absent from the accessibility interactive-window list.
+            text = android.view.inspector.WindowInspector.getGlobalWindowViews().filterIsInstance<android.widget.TextView>()
+                .firstOrNull { it.isShown && it.display?.displayId == target &&
+                    (it.layoutParams as? android.view.WindowManager.LayoutParams)?.title == title }
+                ?.contentDescription?.toString()
+        }
+        return text
+    }
+
+    @Test fun debugUatNoticeAppearsOnExternalDisplayOncePerUpdate() {
+        org.junit.Assume.assumeTrue(BuildConfig.BUILD_TYPE == "debug")
+        val notice = context.getSharedPreferences("uat_notice", Context.MODE_PRIVATE)
+        val savedNotice = notice.all.toMap()
+        try {
+            notice.edit().clear().commit()
+            val target = vm.state.value.targetDisplay!!.id
+            fun announce() = main.onActivity { activity ->
+                activity.startActivity(Intent(activity, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("uat_ready", true))
+            }
+            announce()
+            await("New Debug build was not announced on the selected monitor") {
+                externalStatusText(target, "AR Touchpad UAT notice")?.contains("Debug ready for UAT") == true
+            }
+            await("UAT notice was not acknowledged and dismissed") {
+                notice.getLong("shown", 0L) > 0L && externalStatusText(target, "AR Touchpad UAT notice") == null
+            }
+            announce()
+            instrumentation.waitForIdleSync()
+            assertEquals(0L, notice.getLong("pending", 0L))
+            assertNull(externalStatusText(target, "AR Touchpad UAT notice"))
+        } finally {
+            val editor = notice.edit().clear()
+            savedNotice.forEach { (key, value) -> if (value is Long) editor.putLong(key, value) }
+            editor.commit()
+        }
+    }
+
+    @Test fun externalStatusTracksPocketLockAndTheMicrophoneSession() {
+        org.junit.Assume.assumeTrue("Grant RECORD_AUDIO on the test emulator to exercise capture",
+            context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        receiveInput()
+        val target = vm.state.value.targetDisplay!!.id
+        fun statusText() = externalStatusText(target, "AR Touchpad display status")
+        main.onActivity { vm.closeSettings(); vm.setPocketMode(true) }
+        await("Pocket lock indicator absent") { statusText() == "Pocket locked" }
+        assertTrue(InputProbeActivity.focused)
+        main.onActivity { vm.updateLaunchpad { it.copy(roomMeter = true) }; vm.setPocketMode(false) }
+        await("Microphone did not produce a level or digital silence") {
+            vm.roomLevel.value.rms != null || vm.roomLevel.value.status == "No mic signal"
+        }
+        await("Mic status absent from external display") {
+            statusText()?.let { "dBFS" in it || it == "No mic signal" } == true
+        }
+        assertTrue(InputProbeActivity.focused)
+        main.onActivity { vm.updateLaunchpad { it.copy(roomMeter = false) } }
+        await("Status stayed visible after disabling the meter") { statusText() == null }
+    }
+
+    @Test fun registeredShortcutLaunchesOnTheSelectedDisplay() {
+        val extension = object : LauncherExtension {
+            override val namespace = "test"
+            override fun entries(context: Context) = listOf(AppShortcut("probe", "Probe",
+                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888),
+                Intent(context, InputProbeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)))
+        }
+        val launcher = AppLauncher(extension)
+        val shortcut = launcher.catalog(context).single()
+        assertEquals("test/probe", shortcut.id)
+        val target = vm.state.value.targetDisplay!!.id
+        main.onActivity { launcher.launch(it, shortcut, target) }
+        try {
+            await("Shortcut did not open on target display") {
+                InputProbeActivity.resumed && InputProbeActivity.activeDisplayId == target
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<InputProbeActivity>().forEach { it.finish() }
+            }
+        }
+    }
+
     @Test fun settingsOverlayLeavesExternalAppResumedAndFocused() {
         receiveInput()
         await("External probe did not gain focus") { InputProbeActivity.resumed && InputProbeActivity.focused }
@@ -422,10 +536,15 @@ class ConnectedInputTest {
                 override fun onSkipToPrevious() { commands += "previous" }
             }, android.os.Handler(android.os.Looper.getMainLooper()))
             playback(android.media.session.PlaybackState.STATE_PLAYING)
+            session.setMetadata(android.media.MediaMetadata.Builder()
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Test film")
+                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Test artist").build())
             session.isActive = true
             await("Test media session not selected; will not send commands to another player") {
                 service.mediaState.getString("sessionPackage") == context.packageName
             }
+            assertEquals("Test film", service.mediaState.getString("title"))
+            assertEquals("Test artist", service.mediaState.getString("subtitle"))
             assertEquals(1, service.mediaState.getInt("playing", -1))
             assertTrue(service.sendMediaControl(KeyEvent.KEYCODE_MEDIA_PAUSE))
             // Keep the fixture playing until routing assertions finish: a genuinely playing

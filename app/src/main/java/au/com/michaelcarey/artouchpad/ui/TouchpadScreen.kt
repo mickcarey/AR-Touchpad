@@ -54,25 +54,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
-private val BG = Color(0xFF0D1117)
-private val SURFACE = Color(0xFF1A2332)
-private val SURFACE_DISABLED = Color(0xFF111820)
-private val ACCENT = Color(0xFF4FC3F7)
-private val TEXT = Color(0xFFE0E0E0)
-private val TEXT_DIM = Color(0xFF90A4AE)
 
 // Fullscreen touchpad with an invisible bottom strip reserved for Android navigation.
 @Composable
 internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boolean,
-    onSwitchBuild: (TouchpadBuild) -> Unit, onShowPhoneOverview: () -> Unit) {
+    onSwitchBuild: (TouchpadBuild) -> Unit, onRoomMeter: (Boolean) -> Unit, onShowPhoneOverview: () -> Unit) {
     val state by viewModel.state.collectAsState()
+    val colors = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     val feedbackScope = rememberCoroutineScope()
     if (state.calibratingOrientation) {
         OrientationCalibrationScreen(onCancel = { viewModel.finishOrientationCalibration() },
             onSave = viewModel::finishOrientationCalibration)
     } else if (state.showSettings && settingsOnPhone) {
-        Box(Modifier.fillMaxSize().background(BG).systemBarsPadding()) { TouchpadSettings(viewModel, onSwitchBuild) }
+        Box(Modifier.fillMaxSize().background(colors.background).systemBarsPadding()) { Launchpad(viewModel, onSwitchBuild, onRoomMeter) }
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)
             // Cover the bottom strip too so launchers can suppress horizontal quick-switch.
@@ -122,23 +117,23 @@ internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boole
                     })
             }
             if (state.dragHeld && !state.blackTouchpad) Text("Drag locked · tap to release",
-                Modifier.align(Alignment.TopCenter).padding(24.dp), color = TEXT)
+                Modifier.align(Alignment.TopCenter).padding(24.dp), color = colors.onSurface)
             if (!state.mouseReady) Column(
                 Modifier.align(Alignment.Center).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Touchpad unavailable", color = TEXT, fontSize = 18.sp)
-                if (!state.externalDisplayConnected) Text("Connect an external display.", color = TEXT_DIM)
+                Text("Touchpad unavailable", color = colors.onSurface, fontSize = 18.sp)
+                if (!state.externalDisplayConnected) Text("Connect an external display.", color = colors.onSurfaceVariant)
                 ConnectionControls(viewModel)
-                TextButton(onClick = viewModel::openSettings) { Text("Settings", color = ACCENT) }
+                TextButton(onClick = viewModel::openSettings) { Text("Launchpad", color = colors.primary) }
             }
         }
     }
 }
 
 @Composable
-internal fun TouchpadSettings(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBuild) -> Unit,
-    nonFocusable: Boolean = false) {
+internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBuild) -> Unit,
+    onRoomMeter: (Boolean) -> Unit, nonFocusable: Boolean = false) {
     val state by viewModel.state.collectAsState()
     // Observe other players/hardware buttons only while settings is composed. Closing or
     // backgrounding settings cancels this work; no permanent polling of media sessions.
@@ -172,6 +167,32 @@ internal fun TouchpadSettings(viewModel: TouchpadViewModel, onSwitchBuild: (Touc
             onMediaKey = viewModel::sendMediaControl,
             mediaState = state.media,
             nonFocusable = nonFocusable,
+            showTitle = state.launchpad.showTitle,
+            indicators = {
+                if (state.pocketMode) Text("🔒  Pocket mode", style = MaterialTheme.typography.labelLarge)
+                if (state.launchpad.roomMeter) {
+                    val level by viewModel.roomLevel.collectAsState()
+                    val reference by viewModel.quietReference.collectAsState()
+                    Text(level.label(reference),
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                }
+            },
+            dashboard = {
+                LaunchpadClock(state.launchpad.worldZones)
+                PinnedApps(state.launchpad.pinned, state.targetDisplay?.id,
+                    { pins -> viewModel.updateLaunchpad { it.copy(pinned = pins) } }, viewModel::closeSettings)
+            },
+            recovery = { RecoverySettings(viewModel, state) },
+            appearance = {
+                LaunchpadSettings(state.launchpad, viewModel::updateLaunchpad, onRoomMeter) {
+                    val level by viewModel.roomLevel.collectAsState()
+                    val reference by viewModel.quietReference.collectAsState()
+                    OutlinedButton(onClick = { viewModel.quietReference.value = level.recentAverage },
+                        enabled = level.recentAverage != null) {
+                        Text(if (reference == null) "Set quiet reference" else "Reset quiet reference · $reference dBFS")
+                    }
+                }
+            },
         )
     }
 }
@@ -203,14 +224,15 @@ private fun installedAlternativeBuild(): TouchpadBuild? {
 @Composable
 private fun ConnectionControls(viewModel: TouchpadViewModel) {
     val state by viewModel.state.collectAsState()
+    val colors = MaterialTheme.colorScheme
     when {
-        !state.shizukuAvailable -> Text("Start Shizuku to connect the mouse.", color = TEXT_DIM)
+        !state.shizukuAvailable -> Text("Start Shizuku to connect the mouse.", color = colors.onSurfaceVariant)
         !state.shizukuPermission -> TextButton(onClick = viewModel::requestShizukuPermission) {
-            Text("Grant Shizuku", color = ACCENT)
+            Text("Grant Shizuku", color = colors.primary)
         }
         !state.mouseReady -> Column {
-            Text(state.connectionMessage, color = TEXT_DIM)
-            TextButton(onClick = viewModel::retryConnection) { Text("Retry connection", color = ACCENT) }
+            Text(state.connectionMessage, color = colors.onSurfaceVariant)
+            TextButton(onClick = viewModel::retryConnection) { Text("Retry connection", color = colors.primary) }
         }
     }
 }
@@ -247,6 +269,7 @@ private fun TouchpadSurface(
     onTogglePocketMode: () -> Unit,
     showVisuals: Boolean,
 ) {
+    val colors = MaterialTheme.colorScheme
     var touchPoints by remember { mutableStateOf(listOf<Offset>()) }
     val haptic = LocalHapticFeedback.current
     val isPocketMode by rememberUpdatedState(pocketMode)
@@ -263,7 +286,7 @@ private fun TouchpadSurface(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (enabled) SURFACE else SURFACE_DISABLED)
+                .background(if (enabled) colors.surfaceContainer else colors.surface)
                 .pointerInput(enabled, holdMs, dragLock, density) {
                     val engine = TouchGestureEngine(object : TouchGestureEngine.Output {
                         override fun move(dx: Float, dy: Float, time: Long) = onMoveCursor(dx, dy, time)
@@ -340,7 +363,7 @@ private fun TouchpadSurface(
             for (col in 0 until cols) {
                 for (row in 0 until rows) {
                     drawCircle(
-                        color = Color(0xFF263545),
+                        color = colors.outlineVariant,
                         radius = 1.8.dp.toPx(),
                         center = Offset(xOffset + col * spacing, yOffset + row * spacing),
                     )
@@ -351,10 +374,10 @@ private fun TouchpadSurface(
 
             // Live touch points
             touchPoints.forEach { pt ->
-                drawCircle(color = ACCENT.copy(alpha = 0.2f), radius = 28.dp.toPx(), center = pt)
-                drawCircle(color = ACCENT, radius = 6.dp.toPx(), center = pt)
+                drawCircle(color = colors.primary.copy(alpha = 0.2f), radius = 28.dp.toPx(), center = pt)
+                drawCircle(color = colors.primary, radius = 6.dp.toPx(), center = pt)
                 drawCircle(
-                    color = ACCENT.copy(alpha = 0.5f),
+                    color = colors.primary.copy(alpha = 0.5f),
                     radius = 18.dp.toPx(),
                     center = pt,
                     style = Stroke(width = 1.5.dp.toPx()),
