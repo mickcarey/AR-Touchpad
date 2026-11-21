@@ -33,14 +33,16 @@ class SettingsUiTest {
         "Volume up" to KeyEvent.KEYCODE_VOLUME_UP,
     )
 
-    private fun mediaPanel(width: Int, enabled: Boolean = true, onKey: (Int) -> Unit = {}, onDismiss: () -> Unit = {}) {
+    private fun mediaPanel(width: Int, enabled: Boolean = true, onKey: (Int) -> Unit = {}, onDismiss: () -> Unit = {},
+        availableBuild: TouchpadBuild? = null, onSwitchBuild: (TouchpadBuild) -> Unit = {}) {
         compose.setContent {
             // Exercise phone and glasses widths on the same physical test device.
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 Box(Modifier.width(width.dp).height(700.dp)) {
                     SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                         false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, onDismiss, {}, {},
-                        { Text("Bottom marker") }, mediaEnabled = enabled, onMediaKey = onKey)
+                        { Text("Bottom marker") }, mediaEnabled = enabled, onMediaKey = onKey,
+                        availableBuild = availableBuild, onSwitchBuild = onSwitchBuild)
                 }
             }
         }
@@ -48,7 +50,8 @@ class SettingsUiTest {
 
     private fun verifyPinnedMedia(width: Int) {
         val received = mutableListOf<Int>()
-        mediaPanel(width, onKey = received::add)
+        val switches = mutableListOf<TouchpadBuild>()
+        mediaPanel(width, onKey = received::add, availableBuild = TouchpadBuild.Prod, onSwitchBuild = switches::add)
         val before = mediaKeys.map { (label, _) ->
             compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsEnabled().getUnclippedBoundsInRoot()
         }
@@ -56,6 +59,13 @@ class SettingsUiTest {
         val mediaCenter = (before.first().left.value + before.last().right.value) / 2f
         assertEquals("Media controls are not centered in the header", (header.left.value + header.right.value) / 2f, mediaCenter, 1f)
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
+        val inHeader = hasAnyAncestor(hasTestTag("settings-header"))
+        if (TouchpadBuild.current == TouchpadBuild.Debug) {
+            compose.onNode(hasText("Debug") and inHeader).assertIsDisplayed()
+        }
+        compose.onNode(hasContentDescription("Switch to Prod") and inHeader).assertIsDisplayed().performClick()
+        compose.onNodeWithText("Switch to Prod").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(TouchpadBuild.Prod), switches) }
         mediaKeys.forEachIndexed { index, (label, _) ->
             val control = compose.onNodeWithContentDescription(label).assertIsDisplayed()
             assertEquals("Header moved while settings scrolled", before[index], control.getUnclippedBoundsInRoot())
@@ -74,6 +84,8 @@ class SettingsUiTest {
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
+        compose.onNodeWithContentDescription("Switch to Prod").assertDoesNotExist()
+        if (TouchpadBuild.current == TouchpadBuild.Debug) compose.onNodeWithText("Debug").assertIsDisplayed()
         mediaKeys.forEach { (label, _) -> compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled() }
     }
     @Test fun mediaIconsFollowObservedPlaybackMuteAndVolumeChanges() {

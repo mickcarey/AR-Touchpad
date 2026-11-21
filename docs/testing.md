@@ -14,15 +14,40 @@ Reports: `app/build/reports/tests/testDebugUnitTest/index.html` and `app/build/r
 
 Validated on 2026-11-20: 104 unit tests passed; lint reported 0 errors and 42 warnings (primarily dependency versions, intentional hidden APIs and device/form-factor constraints). Prod and Debug APKs built successfully; Prod manifest isolation and 16 KB native alignment were checked.
 
-## Pixel / external-display tests
+## Pixel 9 emulator
 
-Connect an unlocked phone to an extended display, keep Shizuku running, and grant **AR Touchpad Debug** permission once. Leave the phone and display on the test apps while the suite runs. The connected tests fail explicitly if the required hardware or permission is missing.
+Use the Android Studio `Pixel_9` AVD with gesture navigation. Debug includes the x86_64 mouse library. The following PowerShell commands start the AVD with software graphics and a fixed emulator port.
+
+```powershell
+Start-Process "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -ArgumentList '-avd','Pixel_9','-port','5556','-no-snapshot','-gpu','software'
+```
+
+Once Android finishes booting, add the second display and verify that Android lists both displays.
+
+```powershell
+adb -s emulator-5556 emu multidisplay add 1 1920 1080 160 0
+adb -s emulator-5556 shell cmd display get-displays -i
+```
+
+Install and start Shizuku inside the emulator, install the Debug and test APKs, then grant AR Touchpad Debug access in the Shizuku dialog. Use the emulator serial with every install and instrumentation command. The edge-gesture test sends swipes through Android's input dispatcher and checks for movement on the second display.
+
+To test switching builds, also install the local Prod APK on the emulator and opt in to the handoff test. It clicks the switch icon in the external settings header using its **Switch to Prod** accessibility label and checks that Prod opens on the phone, Debug releases its mouse, and the external test app stays resumed.
+
+```powershell
+.\gradlew.bat :app:assembleProd
+adb -s emulator-5556 install -r app/build/outputs/apk/prod/app-prod.apk
+adb -s emulator-5556 shell am instrument -w -e buildSwitch true -e class 'au.com.michaelcarey.artouchpad.ConnectedInputTest#switchFromGlassesSettingsLaunchesProdOnPhone' au.com.michaelcarey.artouchpad.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+## Connected tests
+
+Keep the emulator unlocked with Shizuku running and the secondary display attached. The suite launches its own input receiver on that display.
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -r au.com.michaelcarey.artouchpad.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5556 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5556 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5556 shell am instrument -w -r au.com.michaelcarey.artouchpad.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Instrumentation checks preference persistence/validation, isolated profile snapshots, settings slider preview versus persistence, four-finger help text, the DEV launcher ribbon, actual native input delivery to the external display, Ctrl+wheel coordinates/modifier cleanup, drag cancellation/copy, reconnect, lost-device recovery, reset, and background/resume keyboard routing. Four-finger tests verify that phone-side settings close once, repeated phone taps open/close external settings, closing restores the Pocket input lock, and no Done button remains. The first phone swipe is dispatched through the actual Activity/Compose surface and must reach the external test window without opening settings. Media-header tests cover compact and wide layouts, centering within the full header, fixed positions while scrolling, correct previous/next/mute key mappings and disabled controls when disconnected; callbacks are recorded without changing real playback or volume.

@@ -79,6 +79,15 @@ class TouchGestureEngineTest {
         e.at(800, p()); e.at(850, p(down = false))
         assertEquals(1, out.actions.count { it == "click" })
     }
+    @Test fun systemCancelAfterInvalidationAllowsFirstFreshStrokeWithoutALift() {
+        val e = engine(lock = true)
+        e.drag()
+        e.invalidate()
+        e.cancel()
+        out.actions.clear()
+        e.at(800, p()); e.at(820, p(x = 430f)); e.at(850, p(x = 430f, down = false))
+        assertEquals(listOf("move", "CURSOR", "IDLE"), out.actions)
+    }
     @Test fun dragLockSurvivesLiftAndRepositionUntilTap() {
         val e = engine(lock = true); e.drag(); e.at(700, p(x = 420f, down = false))
         assertTrue(out.actions.contains("held:true")); assertFalse(out.actions.contains("end"))

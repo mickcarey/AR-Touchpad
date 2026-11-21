@@ -37,14 +37,14 @@ android {
         manifestPlaceholders["appLabel"] = "AR Touchpad"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // arm64-v8a only: Pixel 10 and Viture XR Pro are both 64-bit ARM devices.
-            // Omitting x86/x86_64 keeps the APK small and avoids cross-compiling uinput_jni.
+            // Phone builds use ARM64. Debug also runs in an x86_64 emulator.
             abiFilters += "arm64-v8a"
         }
     }
 
     buildTypes {
         debug {
+            ndk.abiFilters += "x86_64"
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             manifestPlaceholders["appLabel"] = "AR Touchpad Debug"

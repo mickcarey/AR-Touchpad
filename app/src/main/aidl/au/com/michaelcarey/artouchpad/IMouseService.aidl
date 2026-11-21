@@ -18,6 +18,7 @@ package au.com.michaelcarey.artouchpad;
 
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.ResultReceiver;
 
 // Input calls are asynchronous and ordered on this Binder, keeping the UI thread free.
 interface IMouseService {
@@ -77,7 +78,8 @@ interface IMouseService {
     boolean isDisplayReady(int displayId, int width, int height) = 14;
 
     // Releases buttons and removes the virtual mouse while no external display is present.
-    oneway void clearDisplay() = 15;
+    // A build handoff waits for this optional acknowledgement before launching its peer.
+    oneway void clearDisplay(in ResultReceiver completion) = 15;
 
     // Hides our mouse icon while locked, preserving the device for immediate settings input.
     oneway void setPointerHidden(boolean hidden) = 16;
@@ -93,6 +95,8 @@ interface IMouseService {
     boolean sendMediaControl(int keycode) = 22;
     // Allows only this build's settings overlay through the existing Shizuku grant.
     boolean enableSettingsOverlay() = 23;
+    oneway void setNotificationShadeBlocked(boolean blocked) = 24;
+    oneway void showPhoneOverview() = 25;
 
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;

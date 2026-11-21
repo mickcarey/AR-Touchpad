@@ -2,7 +2,7 @@
 .SYNOPSIS
 Pair, connect, build, and install AR Touchpad over Android Wireless debugging.
 .EXAMPLE
-.\scripts\install-wireless.ps1 -PairAddress 192.168.1.10:37123 -Address 192.168.1.10:40001
+.\scripts\install-wireless.ps1 -PairAddress 192.0.2.10:37123 -Address 192.0.2.10:40001
 .EXAMPLE
 .\scripts\install-wireless.ps1
 #>

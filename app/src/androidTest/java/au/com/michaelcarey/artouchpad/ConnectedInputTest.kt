@@ -1,12 +1,15 @@
 package au.com.michaelcarey.artouchpad
 
 import android.app.ActivityOptions
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Display
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -121,6 +124,59 @@ class ConnectedInputTest {
         assertFalse("An edge swipe opened settings", vm.state.value.showSettings)
     }
 
+    @Test fun cancelledBottomEdgeDragReleasesAndNextSwipeMovesAtMinus90Degrees() =
+        checkCancelledBottomEdgeDrag(dragLock = true)
+
+    @Test fun cancelledBottomEdgeDragWithoutLockDoesNotCopyAtMinus90Degrees() =
+        checkCancelledBottomEdgeDrag(dragLock = false)
+
+    private fun checkCancelledBottomEdgeDrag(dragLock: Boolean) {
+        receiveInput()
+        var x = 0f
+        var edgeY = 0f
+        main.onActivity { activity ->
+            vm.closeSettings()
+            vm.setAxisRotation(AxisRotation.COUNTERCLOCKWISE_90)
+            vm.updateInputSettings { it.copy(holdMs = 300, dragLock = dragLock, autoCopy = true,
+                smoothing = Smoothing.OFF, sensitivity = 1f, precision = false) }
+            val decor = activity.window.decorView
+            x = decor.width / 2f
+            edgeY = decor.height - decor.rootWindowInsets
+                .getInsets(android.view.WindowInsets.Type.mandatorySystemGestures()).bottom - 2f
+        }
+        awaitPhoneFrame()
+        var downTime = 0L
+        fun touch(action: Int, atX: Float, atY: Float) {
+            main.onActivity { activity ->
+                val now = SystemClock.uptimeMillis()
+                if (action == MotionEvent.ACTION_DOWN) downTime = now
+                val event = MotionEvent.obtain(downTime, now, action, atX, atY, 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+            }
+        }
+        touch(MotionEvent.ACTION_DOWN, x, edgeY - 64)
+        SystemClock.sleep(400)
+        touch(MotionEvent.ACTION_MOVE, x, edgeY)
+        await("Long-press drag did not press the external mouse button") {
+            InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_DOWN }
+        }
+        touch(MotionEvent.ACTION_CANCEL, x, edgeY)
+        assertFalse("Android cancellation latched drag lock", vm.state.value.dragHeld)
+        await("Cancelled drag left the external mouse button down") {
+            InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_UP }
+        }
+        val release = InputProbeActivity.samples.last { it.action == MotionEvent.ACTION_UP }
+        touch(MotionEvent.ACTION_DOWN, x, edgeY - 64)
+        touch(MotionEvent.ACTION_MOVE, x + 40, edgeY - 64)
+        touch(MotionEvent.ACTION_UP, x + 40, edgeY - 64)
+        await("First fresh swipe did not move the external cursor upwards") {
+            InputProbeActivity.samples.any { it.receivedAtNanos > release.receivedAtNanos &&
+                it.action == MotionEvent.ACTION_HOVER_MOVE && it.y < release.y }
+        }
+        assertFalse("Cancelled drag copied the selection", InputProbeActivity.keys.any { it.first == KeyEvent.KEYCODE_C })
+    }
+
     private fun awaitPhoneFrame() {
         instrumentation.waitForIdleSync()
         // Compose applies state/LaunchedEffect on a frame, after the main queue can be idle.
@@ -133,26 +189,125 @@ class ConnectedInputTest {
         assertTrue("Phone surface did not draw", frames.await(5, java.util.concurrent.TimeUnit.SECONDS))
     }
 
+    @Test fun systemRoutedEdgeSwipesKeepMovingTheExternalCursor() {
+        receiveInput()
+        main.onActivity {
+            vm.closeSettings()
+            vm.updateInputSettings { it.copy(smoothing = Smoothing.OFF, sensitivity = 1f, precision = false) }
+        }
+        awaitPhoneFrame()
+        lateinit var bounds: android.graphics.Rect
+        main.onActivity { bounds = it.windowManager.currentWindowMetrics.bounds }
+        val automation = instrumentation.uiAutomation
+        automation.waitForIdle(500, 10000)
+        val width = bounds.width()
+        val height = bounds.height()
+        // Two top strokes in succession exercise a pull-down while transient bars may be visible.
+        val strokes = listOf(
+            intArrayOf(2, height / 3, 160, height / 3),
+            intArrayOf(width - 3, height * 2 / 3, width - 160, height * 2 / 3),
+            intArrayOf(width / 3, 2, width / 3, 160),
+            intArrayOf(width / 3, 2, width / 3, 160),
+        )
+        for ((x1, y1, x2, y2) in strokes) {
+            val previous = InputProbeActivity.samples.lastOrNull()
+            InputProbeActivity.samples.clear()
+            // Inject through InputDispatcher so SystemUI and the launcher can intercept.
+            val command = "input touchscreen -d 0 swipe $x1 $y1 $x2 $y2 180"
+            val output = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                automation.executeShellCommand(command)
+            ).bufferedReader().use { it.readText() }
+            assertTrue(output, output.isBlank())
+            await("Stroke from ($x1, $y1) lost the external pointer at $previous") {
+                InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE ||
+                    it.action == MotionEvent.ACTION_HOVER_ENTER }
+            }
+        }
+    }
+
+    @Test fun topEdgePullsDoNotRevealThePhoneStatusBar() {
+        receiveInput()
+        main.onActivity {
+            vm.closeSettings()
+            vm.updateInputSettings {
+                it.copy(smoothing = Smoothing.OFF, sensitivity = 0.3f, precision = false,
+                    blackTouchpad = false, holdMs = 1200)
+            }
+            vm.setAxisRotation(AxisRotation.NONE)
+            vm.setDimDelay(0)
+        }
+        awaitPhoneFrame()
+        val automation = instrumentation.uiAutomation
+        var statusHeight = 0
+        var width = 0
+        main.onActivity {
+            val decor = it.window.decorView
+            width = decor.width
+            statusHeight = decor.rootWindowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars()).top
+        }
+        assertTrue(statusHeight > 0)
+        fun statusBarPixels(): IntArray {
+            val screen = requireNotNull(automation.takeScreenshot())
+            try {
+                // Sample the clock and system icons, leaving the touch indicator out of the comparison.
+                val band = width / 3
+                return IntArray(2 * band * statusHeight).also { pixels ->
+                    screen.getPixels(pixels, 0, band, 0, 0, band, statusHeight)
+                    screen.getPixels(pixels, band * statusHeight, band, width - band, 0, band, statusHeight)
+                }
+            } finally { screen.recycle() }
+        }
+        automation.waitForIdle(500, 5000)
+        val before = statusBarPixels()
+        repeat(2) { stroke ->
+            val down = SystemClock.uptimeMillis()
+            fun send(action: Int, y: Float) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, width / 2f, y, 0)
+                try {
+                    event.source = InputDevice.SOURCE_TOUCHSCREEN
+                    HiddenApiBypass.invoke(android.view.InputEvent::class.java, event, "setDisplayId", Display.DEFAULT_DISPLAY)
+                    assertTrue(automation.injectInputEvent(event, true))
+                } finally { event.recycle() }
+            }
+            InputProbeActivity.samples.clear()
+            send(MotionEvent.ACTION_DOWN, 1f)
+            try {
+                for (step in 1..8) {
+                    SystemClock.sleep(16)
+                    send(MotionEvent.ACTION_MOVE, 1f + step * 32f)
+                }
+                SystemClock.sleep(250)
+                assertTrue("Status bar appeared during top-edge drag ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            } finally { send(MotionEvent.ACTION_UP, 257f) }
+            assertTrue("Status bar appeared after lifting on stroke ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            await("Top-edge drag ${stroke + 1} did not move the external pointer") {
+                InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE }
+            }
+        }
+    }
+
     private fun fourFingerTap() {
-        val down = SystemClock.uptimeMillis()
         val properties = Array(4) { index -> MotionEvent.PointerProperties().apply {
             id = index; toolType = MotionEvent.TOOL_TYPE_FINGER
         } }
         val coordinates = Array(4) { index -> MotionEvent.PointerCoords().apply {
             x = 200f + index * 120f; y = 500f; pressure = 1f; size = 1f
         } }
-        fun send(action: Int, count: Int) {
-            main.onActivity { activity ->
-                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, count,
+        main.onActivity { activity ->
+            // A 70 ms tap regardless of how long the emulator takes to draw external settings.
+            val down = SystemClock.uptimeMillis() - 70
+            var time = down
+            fun send(action: Int, count: Int) {
+                val event = MotionEvent.obtain(down, time, action, count,
                     properties, coordinates, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
                 try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+                time += 10
             }
-            SystemClock.sleep(10)
+            send(MotionEvent.ACTION_DOWN, 1)
+            for (count in 2..4) send(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+            for (count in 4 downTo 2) send(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
+            send(MotionEvent.ACTION_UP, 1)
         }
-        send(MotionEvent.ACTION_DOWN, 1)
-        for (count in 2..4) send(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
-        for (count in 4 downTo 2) send(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), count)
-        send(MotionEvent.ACTION_UP, 1)
     }
 
     @Test fun fourFingerTapTogglesExternalSettingsAndRestoresPocketLock() {
@@ -207,6 +362,46 @@ class ConnectedInputTest {
         }
         await("Overlay did not dismiss") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+    }
+
+    @Test fun switchFromGlassesSettingsLaunchesProdOnPhone() {
+        org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("buildSwitch") == "true")
+        assertNotNull("Install the Prod APK on the test emulator", TouchpadBuild.Prod.launchIntent(context))
+        receiveInput()
+        val externalDisplay = vm.state.value.targetDisplay!!.id
+        val automation = instrumentation.uiAutomation
+        val info = automation.serviceInfo
+        val originalFlags = info.flags
+        try {
+            info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            automation.serviceInfo = info
+            main.onActivity { vm.openSettings() }
+            var button: AccessibilityNodeInfo? = null
+            fun switchLabel(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+                if (node == null) return null
+                if (node.contentDescription?.toString() == "Switch to Prod") return node
+                for (i in 0 until node.childCount) switchLabel(node.getChild(i))?.let { return it }
+                return null
+            }
+            await("No switch to Prod on the external display") {
+                val windows = automation.windowsOnAllDisplays[externalDisplay].orEmpty()
+                val label = windows.mapNotNull { it.root }.filter { it.packageName == context.packageName }
+                    .firstNotNullOfOrNull(::switchLabel)
+                button = generateSequence(label) { it.parent }.firstOrNull { it.isClickable }
+                button != null
+            }
+            assertTrue(button!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            await("Prod did not open on the phone") {
+                automation.windowsOnAllDisplays[Display.DEFAULT_DISPLAY].orEmpty()
+                    .any { it.root?.packageName == TouchpadBuild.Prod.packageId }
+            }
+            assertFalse("Debug still owns the mouse", vm.mouse.isDisplayReady)
+            assertFalse("Debug settings stayed open", vm.state.value.showSettings)
+            assertTrue("Switching displaced the external app", InputProbeActivity.resumed)
+        } finally {
+            info.flags = originalFlags
+            automation.serviceInfo = info
+        }
     }
 
     @Test fun mediaSessionPlaybackStateAndCommandsUseTheSamePlayer() {
@@ -336,7 +531,7 @@ class ConnectedInputTest {
     @Test fun lostDeviceReportsFailureAndRetryRecoversWithoutRestartingShizuku() {
         val serviceField = ShizukuMouseController::class.java.getDeclaredField("service").apply { isAccessible = true }
         val service = serviceField.get(vm.mouse) as IMouseService
-        service.clearDisplay()
+        service.clearDisplay(null)
         await("Lost device remained marked ready") { !vm.state.value.mouseReady }
         assertTrue(vm.state.value.connectionMessage.contains("Retry", ignoreCase = true))
         main.onActivity { vm.retryConnection() }
