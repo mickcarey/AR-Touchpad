@@ -460,9 +460,11 @@ class ConnectedInputTest {
         main.onActivity {
             val attrs = overlay!!.window!!.attributes
             assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, attrs.type)
-            assertEquals(0, attrs.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
+            assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
+            assertTrue(attrs.blurBehindRadius > 0)
             assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
-            assertEquals(0f, attrs.dimAmount, 0f)
+            assertTrue(attrs.dimAmount in 0.05f..0.22f)
             assertEquals(vm.state.value.targetDisplay!!.id, overlay!!.display.displayId)
             // Capture the real external overlay for visual review, not the phone fallback.
             val view = overlay!!.window!!.decorView

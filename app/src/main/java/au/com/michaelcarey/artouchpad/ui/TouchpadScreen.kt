@@ -177,11 +177,11 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                 }
             },
-            dashboard = {
-                LaunchpadClock(state.launchpad.worldZones)
-                PinnedApps(state.launchpad.pinned, state.targetDisplay?.id,
+            apps = { library, onAdd ->
+                PinnedApps(state.launchpad.pinned, state.targetDisplay?.id, library, onAdd,
                     { pins -> viewModel.updateLaunchpad { it.copy(pinned = pins) } }, viewModel::closeSettings)
             },
+            clock = { LaunchpadClock(state.launchpad.worldZones) },
             recovery = { RecoverySettings(viewModel, state) },
             appearance = {
                 LaunchpadSettings(state.launchpad, viewModel::updateLaunchpad, onRoomMeter) {

@@ -37,7 +37,7 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ### Launchpad
 
-Tap four fingers to open Launchpad. The local clock follows the phone’s time zone and 12/24-hour preference. Choose **Settings → Personalise → World clocks** to add or remove cities. **Pinned apps → Choose apps** lists installed launcher activities. Select your favourites and choose **Finish pinning**. A pin opens on the selected external display, or on the phone when disconnected.
+Tap four fingers to open Launchpad. The local clock follows the phone’s time zone and 12/24-hour preference. Choose **Settings → Personalise → World clocks** to add or remove cities. **Add App** opens the app library. Select apps to pin or remove them, then return to **Overview**. A pin opens on the selected external display, or on the phone when disconnected.
 
 Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to see the title and subtitle supplied by the active media session.
 
@@ -64,7 +64,7 @@ Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers
 
 Need to change something? Tap four fingers to open Launchpad on the external display. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
-The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running without a dark backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
+The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running with a lightly dimmed backdrop and subtle blur on supported devices. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
 
 ### Calibration that fits your grip
 

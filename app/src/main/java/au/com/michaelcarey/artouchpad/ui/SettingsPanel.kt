@@ -3,7 +3,9 @@ package au.com.michaelcarey.artouchpad.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.paneTitle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -73,16 +75,24 @@ internal fun SettingsPanel(
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
     showTitle: Boolean = false,
     indicators: @Composable () -> Unit = {},
-    dashboard: @Composable ColumnScope.() -> Unit = {},
+    apps: @Composable (Boolean, () -> Unit) -> Unit = { _, _ -> },
+    clock: @Composable () -> Unit = {},
     appearance: @Composable () -> Unit = {},
     recovery: @Composable () -> Unit = {},
 ) {
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
+    var library by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var settings by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     val dismiss by rememberUpdatedState(onDismiss)
     val density = LocalDensity.current.density
-    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
+    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo) {
+        when {
+            settings -> settings = false
+            library -> library = false
+            else -> onDismiss()
+        }
+    }
     CompositionLocalProvider(LocalNonFocusableSettings provides nonFocusable) {
 
         // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
@@ -101,35 +111,42 @@ internal fun SettingsPanel(
             }
         }) {
             Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
-                shape = RoundedCornerShape(28.dp)) {
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = if (nonFocusable) 0.92f else 1f),
+                contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column {
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
-                        availableBuild, onSwitchBuild, showTitle, indicators)
+                        availableBuild, onSwitchBuild, showTitle, indicators, settings, { settings = !settings }, onDismiss)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(selected = !settings, onClick = { settings = false }, label = { Text("Overview") })
-                        FilterChip(selected = settings, onClick = { settings = true }, label = { Text("Settings") })
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = onDismiss) { Text("×", Modifier.semantics { contentDescription = "Close Launchpad" },
-                            style = MaterialTheme.typography.headlineMedium) }
+                    if (settings) {
+                        PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
+                    } else {
+                        PanelTabs(listOf("Overview", "App library"), if (library) "App library" else "Overview") {
+                            library = it == "App library"
+                        }
                     }
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
-                        val overviewScroll = rememberScrollState()
-                        val settingsScroll = key(section) { rememberScrollState() }
-                        Column(Modifier.fillMaxSize().verticalScroll(if (settings) settingsScroll else overviewScroll).padding(if (wide) 24.dp else 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                            if (!settings) {
-                                dashboard()
+                        if (!settings) {
+                            val appsColumn: @Composable () -> Unit = {
+                                apps(library) { library = true }
                                 appControls()
-                                return@Column
                             }
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                for (name in listOf("Personalise", "Controls", "Connection")) {
-                                    FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
+                            if (nonFocusable || maxWidth >= 640.dp) {
+                                Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Column(Modifier.weight(1f).testTag("apps-pane").verticalScroll(key(library) { rememberScrollState() }),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)) { appsColumn() }
+                                    Column(Modifier.weight(1f).testTag("clock-pane").verticalScroll(rememberScrollState())) { clock() }
                                 }
+                            } else {
+                                Column(Modifier.fillMaxSize().verticalScroll(key(library) { rememberScrollState() }).padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)) { appsColumn(); clock() }
                             }
+                            return@BoxWithConstraints
+                        }
+                        Column(Modifier.fillMaxSize().verticalScroll(key(section) { rememberScrollState() }).padding(if (wide) 24.dp else 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(20.dp)) {
                             when (section) {
                                 "Personalise" -> { appearance(); return@Column }
                                 "Connection" -> { appControls(); recovery(); return@Column }
@@ -201,6 +218,21 @@ internal fun SettingsPanel(
                 }
             }
             if (showInfo) SettingsInfoDialog(allDisplays, targetDisplay) { showInfo = false }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PanelTabs(tabs: List<String>, selected: String, onSelect: (String) -> Unit) {
+    FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.Center) {
+        tabs.forEach { title ->
+            val active = title == selected
+            Box(Modifier.selectable(selected = active, role = Role.Tab, onClick = { onSelect(title) })
+                .heightIn(min = 48.dp).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                Text(title, style = MaterialTheme.typography.titleSmall,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

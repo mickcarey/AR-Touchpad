@@ -60,7 +60,7 @@ class SettingsUiTest {
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
         val mediaCenter = (before.first().left.value + before.last().right.value) / 2f
         assertEquals("Media controls are not centered in the header", (header.left.value + header.right.value) / 2f, mediaCenter, 1f)
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Controls").performClick()
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
         val inHeader = hasAnyAncestor(hasTestTag("settings-header"))
@@ -85,6 +85,26 @@ class SettingsUiTest {
     }
 
     @Test fun phoneMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(360)
+    @Test fun wideOverviewUsesEqualColumnsAndCenteredTabs() {
+        mediaPanel(1000)
+        val left = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
+        val right = compose.onNodeWithTag("clock-pane").getUnclippedBoundsInRoot()
+        assertEquals((left.right - left.left).value, (right.right - right.left).value, 1f)
+        assertTrue(left.right < right.left)
+        val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
+        val overview = compose.onNodeWithText("Overview").getUnclippedBoundsInRoot()
+        val library = compose.onNodeWithText("App library").getUnclippedBoundsInRoot()
+        assertEquals((header.left.value + header.right.value) / 2, (overview.left.value + library.right.value) / 2, 1f)
+        val title = compose.onNodeWithText("Launchpad").getUnclippedBoundsInRoot()
+        val info = compose.onNodeWithContentDescription("Information").getUnclippedBoundsInRoot()
+        val cog = compose.onNodeWithContentDescription("Settings").getUnclippedBoundsInRoot()
+        assertTrue(title.right <= info.left && info.right <= cog.left)
+        compose.onNodeWithText("App library").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Personalise").assertIsSelected()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("App library").assertIsSelected()
+    }
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
         val visible = androidx.compose.runtime.mutableStateOf(false)
@@ -92,14 +112,14 @@ class SettingsUiTest {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
                 mediaEnabled = true, mediaState = MediaState(title = "Night train", subtitle = "Kyoto"),
-                showTitle = visible.value, dashboard = { Text("Pinned apps") }, appearance = { Text("Appearance") })
+                showTitle = visible.value, apps = { _, _ -> Text("Pinned apps") }, appearance = { Text("Appearance") })
         }
         compose.onNodeWithText("Pinned apps").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertDoesNotExist()
         compose.onNodeWithText("Night train · Kyoto").assertDoesNotExist()
         compose.runOnIdle { visible.value = true }
         compose.onNodeWithText("Night train · Kyoto").assertIsDisplayed()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithText("Pinned apps").assertDoesNotExist()
     }
@@ -139,20 +159,22 @@ class SettingsUiTest {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val app = AppLauncher(InstalledApps).catalog(context).groupBy { it.label }.values.first { it.size == 1 }.single()
         val pins = androidx.compose.runtime.mutableStateOf(emptySet<String>())
+        val library = androidx.compose.runtime.mutableStateOf(false)
         compose.setContent {
             androidx.compose.foundation.layout.Column(Modifier.verticalScroll(rememberScrollState())) {
-                au.com.michaelcarey.artouchpad.ui.PinnedApps(pins.value, null, { pins.value = it }, {})
+                au.com.michaelcarey.artouchpad.ui.PinnedApps(pins.value, null, library.value, { library.value = true },
+                    { pins.value = it }, {})
             }
         }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Choose apps").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Choose apps").performClick()
+        compose.onNodeWithText("Add App").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(app.label).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(app.label).performScrollTo().performClick()
-        compose.onNodeWithText("Finish pinning").performScrollTo().performClick()
+        compose.runOnIdle { library.value = false }
         compose.onNodeWithText(app.label).assertExists()
         compose.runOnIdle { assertEquals(setOf(app.id), pins.value) }
-        compose.onNodeWithText("Edit pins").performScrollTo().performClick()
+        compose.onNodeWithText("Add App").performScrollTo().performClick()
         compose.onNodeWithText(app.label).performScrollTo().performClick()
-        compose.onNodeWithText("Finish pinning").performScrollTo().performClick()
+        compose.runOnIdle { library.value = false }
         compose.onNodeWithText(app.label).assertDoesNotExist()
     }
 
@@ -174,7 +196,7 @@ class SettingsUiTest {
                 false, false, false, false, emptyList(), null, { changes++ }, {}, {}, {}, {}, {}, {}, {}, {}, {},
                 { saves++ }, {})
         }
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Controls").performClick()
         compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))[0].performScrollTo().performTouchInput {
             down(center); moveTo(centerRight - androidx.compose.ui.geometry.Offset(12f, 0f), 100); up()

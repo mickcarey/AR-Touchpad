@@ -33,8 +33,11 @@ internal class SettingsOverlay(
         window?.apply {
             setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
-            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setDimAmount(0f)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            setDimAmount(0.16f)
+            attributes = attributes.apply {
+                blurBehindRadius = (8f * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+            }
         }
         window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         window?.decorView?.apply {

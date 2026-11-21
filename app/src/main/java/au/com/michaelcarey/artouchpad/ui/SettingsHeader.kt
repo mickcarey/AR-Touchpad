@@ -28,15 +28,27 @@ internal fun SettingsHeader(
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
     showTitle: Boolean = false,
     indicators: @Composable () -> Unit = {},
+    settingsOpen: Boolean = false,
+    onSettings: () -> Unit = {},
+    onClose: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
-        val inlineMedia = maxWidth >= 768.dp
+        val inlineMedia = maxWidth >= 860.dp
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Launchpad", Modifier.align(Alignment.CenterVertically), fontSize = 28.sp,
                         fontWeight = FontWeight.Medium)
+                    Row(Modifier.align(Alignment.CenterVertically), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onInformation) {
+                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                        }
+                        IconToggleButton(checked = settingsOpen, onCheckedChange = { onSettings() }) {
+                            Icon(painterResource(R.drawable.ic_settings_cog), contentDescription = "Settings",
+                                tint = if (settingsOpen) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                        }
+                    }
                     if (TouchpadBuild.current == TouchpadBuild.Debug) {
                         Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -57,8 +69,9 @@ internal fun SettingsHeader(
                                 contentDescription = "Switch to ${availableBuild.name}")
                         }
                     }
-                    IconButton(onClick = onInformation) {
-                        Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                    IconButton(onClick = onClose) {
+                        Icon(painterResource(android.R.drawable.ic_menu_close_clear_cancel), contentDescription = "Close Launchpad",
+                            modifier = Modifier.size(24.dp))
                     }
                 }
             }
