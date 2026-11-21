@@ -1,6 +1,12 @@
 package au.com.michaelcarey.artouchpad
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadata
+import android.content.ContentResolver
+import android.net.Uri
+import android.util.Size
+import kotlin.math.roundToInt
 import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -48,7 +54,9 @@ internal class MediaControls(context: Context) {
             val controller = activeController()
             putString("sessionPackage", controller?.packageName)
             if (isJellyfin(controller?.packageName)) putParcelable("jellyfinSession", controller?.sessionToken)
+            putParcelable("sessionActivity", runCatching { controller?.sessionActivity }.getOrNull())
             val metadata = controller?.metadata
+            putString("artworkKey", artworkKey(controller?.packageName, metadata))
             val description = metadata?.description
             putString("title", description?.title?.toString())
             val subtitle = description?.subtitle?.toString()?.takeIf { it.isNotBlank() }
@@ -69,6 +77,14 @@ internal class MediaControls(context: Context) {
         putBoolean("muted", audio.isStreamMute(AudioManager.STREAM_MUSIC))
         putInt("volume", audio.getStreamVolume(AudioManager.STREAM_MUSIC))
         putInt("maxVolume", audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    /** Resolve only the active player's own published cover, independently of volume/status polling. */
+    fun artwork(expectedKey: String): Bitmap? {
+        val controller = activeController() ?: return null
+        val metadata = controller.metadata ?: return null
+        if (artworkKey(controller.packageName, metadata) != expectedKey) return null
+        return loadPlaybackCover(shellContext, controller.packageName, metadata)
     }
 
     fun send(key: Int): Boolean {
@@ -105,4 +121,38 @@ internal class MediaControls(context: Context) {
         }
         return true
     }
+}
+
+private const val COVER_PIXELS = 192
+
+internal fun artworkKey(source: String?, metadata: MediaMetadata?): String? {
+    if (metadata == null || !(isJellyfin(source) || source == "com.spotify.music" || source == "com.spotify.lite")) return null
+    val description = metadata.description
+    val bitmap = description.iconBitmap != null
+    val uri = metadata.coverUri()
+    if (!bitmap && uri?.scheme != ContentResolver.SCHEME_CONTENT) return null
+    return listOf(source, description.mediaId, description.title, description.subtitle,
+        metadata.getString(MediaMetadata.METADATA_KEY_ALBUM), uri, bitmap)
+        .joinToString("|") { Uri.encode(it?.toString().orEmpty()) }
+}
+
+private fun MediaMetadata.coverUri(): Uri? {
+    val preferred = getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) ?: getString(MediaMetadata.METADATA_KEY_ART_URI)
+    return preferred?.let(Uri::parse)?.takeIf { it.scheme == ContentResolver.SCHEME_CONTENT } ?: description.iconUri
+}
+
+internal fun loadPlaybackCover(context: Context, source: String, metadata: MediaMetadata): Bitmap? {
+    val description = metadata.description
+    val bitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+        ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: description.iconBitmap
+    if (bitmap != null) {
+        val scale = minOf(1f, COVER_PIXELS.toFloat() / maxOf(bitmap.width, bitmap.height))
+        return Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).roundToInt().coerceAtLeast(1),
+            (bitmap.height * scale).roundToInt().coerceAtLeast(1), true)
+    }
+    val uri = metadata.coverUri() ?: return null
+    if (uri.scheme != ContentResolver.SCHEME_CONTENT) return null
+    val provider = uri.authority?.let { context.packageManager.resolveContentProvider(it, 0) }
+    if (provider?.packageName != source) return null
+    return context.contentResolver.loadThumbnail(uri, Size(COVER_PIXELS, COVER_PIXELS), null)
 }

@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import au.com.michaelcarey.artouchpad.BuildConfig
+import androidx.compose.ui.text.style.TextAlign
 import au.com.michaelcarey.artouchpad.AxisRotation
 import au.com.michaelcarey.artouchpad.DIM_DELAY_CHOICES_SEC
 import au.com.michaelcarey.artouchpad.DisplayInfo
@@ -33,6 +35,7 @@ import au.com.michaelcarey.artouchpad.MediaState
 import au.com.michaelcarey.artouchpad.TouchpadBuild
 import androidx.compose.ui.window.PopupProperties
 
+internal val LocalLaunchpadGutter = staticCompositionLocalOf { 16.dp }
 private val LocalNonFocusableSettings = staticCompositionLocalOf { false }
 
 /** Same controls on both displays; wide windows use two columns, phones use one. */
@@ -78,6 +81,8 @@ internal fun SettingsPanel(
     appPicker: @Composable (() -> Unit) -> Unit = {},
     appearance: @Composable () -> Unit = {},
     recovery: @Composable () -> Unit = {},
+    onOpenPlayer: (MediaState) -> Unit = {},
+    loadArtwork: suspend (String) -> android.graphics.Bitmap? = { null },
 ) {
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
     var pickingApps by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -124,16 +129,18 @@ internal fun SettingsPanel(
                 contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column {
                     if (TouchpadBuild.current == TouchpadBuild.Debug) {
-                        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                            Text("AR Touchpad · Debug build", Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+                        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary) {
+                            Text("Debug Build Version ${BuildConfig.VERSION_NAME.removeSuffix("-debug")}",
+                                Modifier.fillMaxWidth().padding(horizontal = LocalLaunchpadGutter.current, vertical = 5.dp),
+                                textAlign = TextAlign.Center,
                                 style = MaterialTheme.typography.labelMedium)
                         }
                     }
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
                         availableBuild, onSwitchBuild, indicators, settings, { settings = !settings })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (!settings) NowPlayingStrip(showTitle && mediaEnabled, mediaState)
+                    if (!settings) NowPlayingStrip(showTitle && mediaEnabled, mediaState, onOpenPlayer, loadArtwork)
                     if (settings) {
                         PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
                     }
@@ -141,7 +148,7 @@ internal fun SettingsPanel(
                         val wide = maxWidth >= 800.dp
                         if (!settings) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                                .padding(horizontal = if (wide) 24.dp else 16.dp, vertical = 12.dp),
+                                .padding(horizontal = LocalLaunchpadGutter.current, vertical = 12.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Box(Modifier.fillMaxWidth().testTag("apps-pane")) {
                                     apps({ pickingApps = true }, { removal = it })
@@ -241,7 +248,10 @@ private fun LaunchpadFrame(external: Boolean, onOutsideTap: () -> Unit, content:
         Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { dismiss() } })
         val panel = if (external) Modifier.size(minOf(1120.dp, maxWidth * 0.92f), minOf(780.dp, maxHeight * 0.9f))
             else Modifier.fillMaxSize().padding(12.dp)
-        Box(panel) { CompositionLocalProvider(LocalNonFocusableSettings provides external, content = content) }
+        BoxWithConstraints(panel) {
+            val gutter = if (maxWidth >= 800.dp) 24.dp else 16.dp
+            CompositionLocalProvider(LocalNonFocusableSettings provides external, LocalLaunchpadGutter provides gutter, content = content)
+        }
     }
 }
 

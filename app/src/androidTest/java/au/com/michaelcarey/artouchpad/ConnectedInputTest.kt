@@ -440,6 +440,39 @@ class ConnectedInputTest {
         }
     }
 
+    @Test fun playbackActivityOpensOnSelectedDisplay() {
+        val target = vm.state.value.targetDisplay!!.id
+        val intent = Intent(context, InputProbeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        val activity = android.app.PendingIntent.getActivity(context, 42, intent, android.app.PendingIntent.FLAG_IMMUTABLE)
+        try {
+            main.onActivity {
+                assertTrue(vm.launcher.openPlayer(it, MediaState(sourcePackage = context.packageName, sessionActivity = activity), target))
+            }
+            await("Playback activity did not open on the selected display") {
+                InputProbeActivity.resumed && InputProbeActivity.activeDisplayId == target
+            }
+        } finally {
+            activity.cancel()
+            instrumentation.runOnMainSync {
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<InputProbeActivity>().forEach { it.finish() }
+            }
+        }
+    }
+
+    @Test fun catalogIsReadyBeforeOpeningAndIsReusedAcrossOpens() {
+        await("App catalog did not prewarm with the launcher closed") { vm.catalog.value.complete }
+        val snapshot = vm.catalog.value.shortcuts!!
+        val pin = snapshot.first()
+        assertEquals(pin.label, vm.launcher.catalog(context, setOf(pin.id)).single().label)
+        main.onActivity { vm.openSettings() }
+        assertSame(snapshot, vm.catalog.value.shortcuts)
+        main.onActivity { vm.closeSettings(); vm.openSettings() }
+        assertSame(snapshot, vm.catalog.value.shortcuts)
+    }
+
     @Test fun settingsOverlayLeavesExternalAppResumedAndFocused() {
         receiveInput()
         await("External probe did not gain focus") { InputProbeActivity.resumed && InputProbeActivity.focused }

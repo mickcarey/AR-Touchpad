@@ -10,6 +10,8 @@ data class MediaState(
     val title: String? = null,
     val subtitle: String? = null,
     val sourcePackage: String? = null,
+    val sessionActivity: android.app.PendingIntent? = null,
+    val artworkKey: String? = null,
 ) {
     val volumeFraction get() = if (maxVolume > 0) {
         if (muted == true) 0f else (volume.toFloat() / maxVolume).coerceIn(0f, 1f)

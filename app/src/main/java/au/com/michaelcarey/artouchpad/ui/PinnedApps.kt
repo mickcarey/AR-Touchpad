@@ -1,9 +1,5 @@
 package au.com.michaelcarey.artouchpad.ui
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -30,41 +26,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import au.com.michaelcarey.artouchpad.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
-@Composable
-internal fun rememberAppCatalog(launcher: AppLauncher): List<AppShortcut>? {
-    val context = LocalContext.current
-    var revision by remember { mutableIntStateOf(0) }
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) { revision++ }
-        }
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_PACKAGE_ADDED)
-            addAction(Intent.ACTION_PACKAGE_REMOVED)
-            addAction(Intent.ACTION_PACKAGE_CHANGED)
-            addDataScheme("package")
-        }
-        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
-        onDispose { context.unregisterReceiver(receiver) }
-    }
-    var apps by remember(context) { mutableStateOf<List<AppShortcut>?>(null) }
-    LaunchedEffect(context, revision) {
-        apps = withContext(Dispatchers.IO) { launcher.catalog(context) }
-    }
-    return apps
-}
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: () -> Unit,
-    onRequestRemoval: (ShortcutRemoval) -> Unit, onLaunch: (AppShortcut) -> Unit) {
+    onRequestRemoval: (ShortcutRemoval) -> Unit, onLaunch: (AppShortcut) -> Unit, catalogComplete: Boolean = true) {
     var menuApp by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -124,7 +92,7 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
                 }
             }
             if (apps == null) SupportingText("Loading installed apps…")
-            if (apps != null) {
+            if (apps != null && catalogComplete) {
                 val missing = pinned - items.map { it.id }.toSet()
                 if (missing.isNotEmpty()) TextButton(onClick = { onRequestRemoval(ShortcutRemoval(missing)) }) {
                     Text("Remove unavailable pins (${missing.size})")

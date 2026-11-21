@@ -68,6 +68,10 @@ class MouseService(private val context: android.content.Context) : IMouseService
             .getOrElse { android.os.Bundle() }
     }
 
+    override fun getMediaArtwork(expectedKey: String): android.graphics.Bitmap? = asShell {
+        runCatching { mediaControls.artwork(expectedKey) }.getOrNull()
+    }
+
     override fun sendMediaControl(keycode: Int): Boolean = asShell {
         if (pointerHidden || readyTarget == null) false
         else runCatching { mediaControls.send(keycode) }

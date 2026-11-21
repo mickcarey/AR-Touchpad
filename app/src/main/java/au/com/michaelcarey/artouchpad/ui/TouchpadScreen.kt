@@ -43,8 +43,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import au.com.michaelcarey.artouchpad.AppLauncher
-import au.com.michaelcarey.artouchpad.InstalledApps
 import au.com.michaelcarey.artouchpad.MultiFingerTapTracker
 import au.com.michaelcarey.artouchpad.TouchGestureEngine
 import au.com.michaelcarey.artouchpad.TouchMode
@@ -138,9 +136,9 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
     onRoomMeter: (Boolean) -> Unit, nonFocusable: Boolean = false,
     onPickerFocus: ((() -> Unit)?) -> Unit = {}) {
     val state by viewModel.state.collectAsState()
-    val launcher = remember { AppLauncher(InstalledApps) }
+    val launcher = viewModel.launcher
     val catalogContext = LocalContext.current
-    val catalog = rememberAppCatalog(launcher)
+    val catalog by viewModel.catalog.collectAsState()
     // Observe other players/hardware buttons only while settings is composed. Closing or
     // backgrounding settings cancels this work; no permanent polling of media sessions.
     LaunchedEffect(state.mouseReady) {
@@ -172,6 +170,16 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
             mediaEnabled = state.touchpadInputEnabled,
             onMediaKey = viewModel::sendMediaControl,
             mediaState = state.media,
+            loadArtwork = viewModel.mouse::mediaArtwork,
+            onOpenPlayer = { media ->
+                val opened = try {
+                    launcher.openPlayer(catalogContext, media, state.targetDisplay?.id ?: android.view.Display.DEFAULT_DISPLAY)
+                } catch (_: android.content.ActivityNotFoundException) { false }
+                  catch (_: SecurityException) { false }
+                  catch (_: IllegalArgumentException) { false }
+                if (opened) viewModel.closeSettings()
+                else android.widget.Toast.makeText(catalogContext, "Playback app unavailable", android.widget.Toast.LENGTH_SHORT).show()
+            },
             nonFocusable = nonFocusable,
             showTitle = state.launchpad.showTitle,
             indicators = {
@@ -185,7 +193,7 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
             },
             onRemoveShortcuts = { ids -> viewModel.updateLaunchpad { it.copy(pinned = it.pinned - ids) } },
             apps = { onAdd, requestRemoval ->
-                PinnedApps(catalog, state.launchpad.pinned, onAdd, requestRemoval,
+                PinnedApps(catalog.shortcuts, state.launchpad.pinned, onAdd, requestRemoval, catalogComplete = catalog.complete,
                     onLaunch = { shortcut ->
                         launcher.launch(catalogContext, shortcut, state.targetDisplay?.id ?: android.view.Display.DEFAULT_DISPLAY)
                         viewModel.closeSettings()
@@ -196,7 +204,7 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
                     onPickerFocus(dismiss)
                     onDispose { onPickerFocus(null) }
                 }
-                AppPicker(catalog, state.launchpad.pinned, dismiss) { ids ->
+                AppPicker(catalog.shortcuts.takeIf { catalog.complete }, state.launchpad.pinned, dismiss) { ids ->
                     viewModel.updateLaunchpad { it.copy(pinned = it.pinned + ids) }
                     dismiss()
                 }

@@ -63,7 +63,7 @@ class SettingsUiTest {
         compose.onNodeWithText("Bottom marker").performScrollTo().assertIsDisplayed()
         val inHeader = hasAnyAncestor(hasTestTag("settings-header"))
         if (TouchpadBuild.current == TouchpadBuild.Debug) {
-            compose.onNodeWithText("AR Touchpad · Debug build").assertIsDisplayed()
+            compose.onNodeWithText("Debug Build Version ${BuildConfig.VERSION_NAME.removeSuffix("-debug")}").assertIsDisplayed()
         }
         compose.onNode(hasContentDescription("Switch to Prod") and inHeader).assertIsDisplayed().performClick()
         compose.onNodeWithText("Switch to Prod").assertDoesNotExist()
@@ -99,7 +99,8 @@ class SettingsUiTest {
         assertTrue(time.bottom - time.top > date.bottom - date.top)
         assertTrue((cog.left - info.right).value in 0f..16f)
         assertEquals(cog.top.value, info.top.value, 1f)
-        assertTrue("Settings cog should sit at the trailing edge", (header.right - cog.right).value in 16f..22f)
+        assertEquals(apps.left.value, time.left.value, 1f)
+        assertEquals(apps.right.value, cog.right.value, 1f)
         compose.onNodeWithContentDescription("Close settings").assertDoesNotExist()
         compose.onNodeWithText("App library").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
@@ -127,18 +128,19 @@ class SettingsUiTest {
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
         val visible = androidx.compose.runtime.mutableStateOf(false)
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        var opened: MediaState? = null
         val title = "Night train — Live from the concert hall, with the full ensemble and special guests"
         compose.setContent {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
                 mediaEnabled = true, mediaState = MediaState(title = title, subtitle = "Kyoto", sourcePackage = context.packageName),
-                showTitle = visible.value, apps = { _, _ -> Text("Add App") }, appearance = { Text("Appearance") })
+                onOpenPlayer = { opened = it }, showTitle = visible.value, apps = { _, _ -> Text("Add App") }, appearance = { Text("Appearance") })
         }
         compose.onNodeWithText("Add App").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertDoesNotExist()
         compose.onNodeWithTag("now-playing").assertDoesNotExist()
         compose.runOnIdle { visible.value = true }
-        compose.onNodeWithText(title).assertIsDisplayed().performSemanticsAction(
+        compose.onNodeWithText(title, useUnmergedTree = true).assertIsDisplayed().performSemanticsAction(
             androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { getLayout ->
             val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             assertTrue(getLayout(layouts))
@@ -146,8 +148,8 @@ class SettingsUiTest {
             assertEquals(androidx.compose.ui.text.style.TextAlign.Center, layouts.single().layoutInput.style.textAlign)
         }
         compose.onNodeWithText("Now playing").assertDoesNotExist()
-        val artist = compose.onNodeWithText("Kyoto").assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertEquals(compose.onNodeWithText(title).getUnclippedBoundsInRoot().bottom, artist.top)
+        val artist = compose.onNodeWithText("Kyoto", useUnmergedTree = true).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot().bottom, artist.top)
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
         val strip = compose.onNodeWithTag("now-playing").getUnclippedBoundsInRoot()
         assertEquals(header.left, strip.left)
@@ -155,10 +157,16 @@ class SettingsUiTest {
         assertEquals((strip.left + strip.right).value / 2f, (artist.left + artist.right).value / 2f, 1f)
         assertEquals(1f, (strip.top - header.bottom).value, 0.5f)
         assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
+        compose.onNodeWithText(title).performClick()
+        compose.runOnIdle { assertEquals(context.packageName, opened?.sourcePackage) }
         val sourceLabel = context.applicationInfo.loadLabel(context.packageManager).toString()
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(sourceLabel).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(compose.onNodeWithContentDescription(sourceLabel).getUnclippedBoundsInRoot().right <=
-            compose.onNodeWithText(title).getUnclippedBoundsInRoot().left)
+            compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot().left)
+        val appsPane = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
+        val logo = compose.onNodeWithContentDescription(sourceLabel).getUnclippedBoundsInRoot()
+        assertEquals(appsPane.left, logo.left)
+        assertTrue(logo.right - logo.left >= 44.dp)
         java.io.File(context.getExternalFilesDir(null), "now-playing-panel.png").outputStream().use {
             compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
@@ -167,12 +175,34 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertDoesNotExist()
         compose.onNodeWithTag("now-playing").assertDoesNotExist()
         compose.onNodeWithContentDescription("Home").performClick()
-        compose.onNodeWithText(title).assertIsDisplayed()
+        compose.onNodeWithText(title, useUnmergedTree = true).assertIsDisplayed()
     }
+    @Test fun coverTracksThePlayingItemAndAlignsToQuickLaunch() {
+        val bitmap = android.graphics.Bitmap.createBitmap(32, 40, android.graphics.Bitmap.Config.ARGB_8888)
+        val media = androidx.compose.runtime.mutableStateOf(MediaState(title = "Song", sourcePackage = "com.spotify.music", artworkKey = "album"))
+        compose.setContent {
+            SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
+                false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                mediaEnabled = true, mediaState = media.value, showTitle = true,
+                loadArtwork = { key -> bitmap.takeIf { key == "album" || key == "movie" } })
+        }
+        fun checkCover(label: String) {
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes().isNotEmpty() }
+            val cover = compose.onNodeWithContentDescription(label).getUnclippedBoundsInRoot()
+            assertEquals(compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot().right, cover.right)
+        }
+        checkCover("Album cover")
+        compose.runOnIdle { media.value = MediaState(title = "Film", sourcePackage = "org.jellyfin.mobile", artworkKey = "movie") }
+        checkCover("Jellyfin cover")
+        compose.onNodeWithContentDescription("Album cover").assertDoesNotExist()
+        compose.runOnIdle { media.value = media.value.copy(title = "Next film", artworkKey = "missing") }
+        compose.onNodeWithContentDescription("Jellyfin cover").assertDoesNotExist()
+    }
+
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
         compose.onNodeWithContentDescription("Switch to Prod").assertDoesNotExist()
-        if (TouchpadBuild.current == TouchpadBuild.Debug) compose.onNodeWithText("AR Touchpad · Debug build").assertIsDisplayed()
+        if (TouchpadBuild.current == TouchpadBuild.Debug) compose.onNodeWithText("Debug Build Version ${BuildConfig.VERSION_NAME.removeSuffix("-debug")}").assertIsDisplayed()
         mediaKeys.forEach { (label, _) -> compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled() }
     }
     @Test fun mediaIconsFollowObservedPlaybackMuteAndVolumeChanges() {

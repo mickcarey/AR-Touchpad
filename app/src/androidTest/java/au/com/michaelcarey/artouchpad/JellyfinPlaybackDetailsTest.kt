@@ -12,6 +12,27 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class JellyfinPlaybackDetailsTest {
+    @Test fun publishedArtworkIsBoundedAndKeyedToTheCurrentItem() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val cover = android.graphics.Bitmap.createBitmap(640, 960, android.graphics.Bitmap.Config.ARGB_8888)
+        val metadata = android.media.MediaMetadata.Builder()
+            .putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, cover)
+            .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "First").build()
+        val next = android.media.MediaMetadata.Builder(metadata)
+            .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Second").build()
+        val key = artworkKey("com.spotify.music", metadata)
+        assertNotNull(key)
+        assertNotEquals(key, artworkKey("com.spotify.music", next))
+        assertNull(artworkKey("com.android.chrome", metadata))
+        val loaded = loadPlaybackCover(context, "com.spotify.music", metadata)!!
+        assertEquals(128, loaded.width)
+        assertEquals(192, loaded.height)
+        val provided = android.media.MediaMetadata.Builder()
+            .putString(android.media.MediaMetadata.METADATA_KEY_ART_URI, "content://media/external/images/media/1").build()
+        assertNotNull(artworkKey("org.jellyfin.mobile", provided))
+        assertNull(loadPlaybackCover(context, "org.jellyfin.mobile", provided))
+    }
+
     @Test fun usesOnlyTheMatchingJellyfinPlaybackNotificationAndCurrentItem() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val session = MediaSession(context, "Episode fixture")

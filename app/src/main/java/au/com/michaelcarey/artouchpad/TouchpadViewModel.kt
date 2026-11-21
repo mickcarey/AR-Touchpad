@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,6 +118,23 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         pocketMode = prefs.getBoolean("pocket_mode", false),
     ).withInputSettings(settingsStore.load()))
     val state: StateFlow<TouchpadState> = _state.asStateFlow()
+    internal val launcher = AppLauncher(InstalledApps)
+    private val _catalog = MutableStateFlow(LauncherCatalog())
+    internal val catalog = _catalog.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            catalogChanges(app).collectLatest {
+                if (!_catalog.value.complete && state.value.launchpad.pinned.isNotEmpty()) {
+                    val pins = withContext(Dispatchers.IO) { launcher.catalog(app, state.value.launchpad.pinned) }
+                    _catalog.value = LauncherCatalog(pins)
+                }
+                val apps = withContext(Dispatchers.IO) { launcher.catalog(app) }
+                _catalog.value = LauncherCatalog(apps, complete = true)
+            }
+        }
+    }
+
     // Transient feedback only: restoring a saved mode must not replay a notification.
     private val _pocketModeChanges = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val pocketModeChanges = _pocketModeChanges.asSharedFlow()

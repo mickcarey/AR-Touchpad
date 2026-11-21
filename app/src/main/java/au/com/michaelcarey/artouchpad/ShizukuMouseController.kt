@@ -82,7 +82,7 @@ class ShizukuMouseController {
     )
         .processNameSuffix("mouse")
         .daemon(false)
-        .version(42)  // identifies the active Jellyfin session for richer playback titles
+        .version(43)  // playback launch intents and on-demand artwork
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -335,9 +335,13 @@ class ShizukuMouseController {
             playing = when (bundle.getInt("playing", -1)) { 1 -> true; 0 -> false; else -> null },
             muted = if (bundle.containsKey("muted")) bundle.getBoolean("muted") else null,
             title = details.first, subtitle = details.second, sourcePackage = source,
+            sessionActivity = bundle.getParcelable("sessionActivity", android.app.PendingIntent::class.java),
+            artworkKey = bundle.getString("artworkKey"),
             volume = bundle.getInt("volume"), maxVolume = bundle.getInt("maxVolume"),
         )
     }
+
+    fun mediaArtwork(key: String) = runCatching { service?.getMediaArtwork(key) }.getOrNull()
 
     fun sendMediaControl(key: Int): Boolean =
         runCatching { isDisplayReady && service?.sendMediaControl(key) == true }.getOrDefault(false)

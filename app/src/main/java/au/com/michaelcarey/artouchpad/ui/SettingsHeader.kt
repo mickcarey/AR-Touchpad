@@ -1,6 +1,12 @@
 package au.com.michaelcarey.artouchpad.ui
 
+import android.graphics.Bitmap
 import android.view.KeyEvent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -49,7 +55,7 @@ internal fun SettingsHeader(
     settingsOpen: Boolean = false,
     onSettings: () -> Unit = {},
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = 16.dp, vertical = 12.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("settings-header").padding(horizontal = LocalLaunchpadGutter.current, vertical = 12.dp)) {
         val inlineMedia = maxWidth >= 860.dp
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -61,15 +67,15 @@ internal fun SettingsHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
                     if (availableBuild != null) {
-                        IconButton(onClick = { onSwitchBuild(availableBuild) }) {
+                        IconButton(onClick = { onSwitchBuild(availableBuild) }, modifier = Modifier.size(48.dp)) {
                             Icon(painterResource(R.drawable.ic_switch_build),
                                 contentDescription = "Switch to ${availableBuild.name}")
                         }
                     }
-                    IconButton(onClick = onInformation) {
+                    IconButton(onClick = onInformation, modifier = Modifier.size(48.dp)) {
                         Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
                     }
-                    IconButton(onClick = onSettings) {
+                    IconButton(onClick = onSettings, modifier = Modifier.size(48.dp)) {
                         Icon(painterResource(if (settingsOpen) R.drawable.ic_home else R.drawable.ic_settings_cog),
                             contentDescription = if (settingsOpen) "Home" else "Settings",
                             tint = if (settingsOpen) Color.White else LocalContentColor.current)
@@ -134,18 +140,35 @@ private fun MediaButtons(enabled: Boolean, onMediaKey: (Int) -> Unit, state: Med
 }
 
 @Composable
-internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
+internal fun NowPlayingStrip(enabled: Boolean, state: MediaState, onOpenPlayer: (MediaState) -> Unit,
+    loadArtwork: suspend (String) -> Bitmap?) {
     val title = state.title.orEmpty().trim()
     val subtitle = state.subtitle.orEmpty().trim()
     AnimatedVisibility(visible = enabled && title.isNotEmpty(),
         enter = expandVertically(expandFrom = Alignment.Top),
         exit = shrinkVertically(shrinkTowards = Alignment.Top)) {
         Column(Modifier.fillMaxWidth().testTag("now-playing")) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                val source = state.sourcePackage
-                if (source != null) key(source) { PlaybackAppIcon(source) }
-                Column(Modifier.fillMaxWidth().heightIn(max = 156.dp).verticalScroll(rememberScrollState())
-                    .padding(horizontal = if (source == null) 20.dp else 60.dp, vertical = 12.dp),
+            val source = state.sourcePackage
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = LocalLaunchpadGutter.current, vertical = 8.dp),
+                contentAlignment = Alignment.Center) {
+                val size = if (maxWidth >= 480.dp) 56.dp else 44.dp
+                if (source != null) key(source) { PlaybackAppIcon(source, Modifier.align(Alignment.CenterStart).size(size)) }
+                state.artworkKey?.let { artworkKey ->
+                    key(artworkKey) {
+                        var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+                        LaunchedEffect(artworkKey) { bitmap = withContext(Dispatchers.IO) { loadArtwork(artworkKey) } }
+                        bitmap?.let {
+                            Image(it.asImageBitmap(), if (source?.startsWith("com.spotify.") == true) "Album cover" else "Jellyfin cover",
+                                Modifier.align(Alignment.CenterEnd).size(size)
+                                    .clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Fit, alignment = Alignment.CenterEnd)
+                        }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().padding(horizontal = if (source == null) 0.dp else size + 8.dp)
+                    .then(if (source == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = "Open playback app") {
+                        onOpenPlayer(state)
+                    }).heightIn(min = if (source == null) 0.dp else size, max = 156.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurface)
@@ -161,7 +184,7 @@ internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
 }
 
 @Composable
-private fun PlaybackAppIcon(packageName: String) {
+private fun PlaybackAppIcon(packageName: String, modifier: Modifier) {
     val pm = LocalContext.current.packageManager
     var app by remember(pm, packageName) { mutableStateOf<Pair<ImageBitmap, String>?>(null) }
     LaunchedEffect(pm, packageName) {
@@ -173,6 +196,6 @@ private fun PlaybackAppIcon(packageName: String) {
         }
     }
     app?.let { (icon, label) ->
-        Image(icon, contentDescription = label, modifier = Modifier.padding(start = 16.dp).size(32.dp))
+        Image(icon, contentDescription = label, modifier = modifier)
     }
 }

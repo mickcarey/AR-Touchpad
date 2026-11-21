@@ -99,6 +99,8 @@ interface IMouseService {
     oneway void showPhoneOverview() = 25;
     oneway void hideTransientPhoneBars() = 26;
 
+    Bitmap getMediaArtwork(String expectedKey) = 27;
+
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;
 }
