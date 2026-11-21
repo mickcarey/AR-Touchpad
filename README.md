@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme-banner.svg" alt="AR Touchpad — Small screen. Big possibilities. Your phone becomes the trackpad for your glasses or desktop display." width="100%">
+  <img src="docs/readme-banner.svg" alt="AR Touchpad. Small screen. Big possibilities. The app icon shows a reclining glasses wearer using a phone as a trackpad." width="100%">
 </p>
 
 <p align="center">
@@ -36,6 +36,8 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 | 🌙 **Moonlight shortcut** | Three-finger tap sends Moonlight's mouse-capture toggle, so you can return control to Android without closing the stream. |
 
 ### Launchpad
+
+![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
 
 Tap four fingers to open Launchpad. The header shows local time in the phone’s 12/24-hour format, with the day and date underneath. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. A green check marks each new selection. The launcher fits above the on-screen keyboard when it opens on the same display. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
 
