@@ -37,7 +37,7 @@ Use your Android phone as a trackpad for an external monitor or display glasses.
 
 ### Launchpad
 
-![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
+![Launchpad with three rows of demo apps and games and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
 
 The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to ten tiles per row, including the dashed **Add App** circle.
 

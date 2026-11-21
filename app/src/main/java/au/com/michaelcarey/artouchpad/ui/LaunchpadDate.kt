@@ -42,7 +42,7 @@ internal fun LaunchpadDate() {
         Text(time, Modifier.testTag("launchpad-time"), style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Medium)
         Text(date, Modifier.testTag("launchpad-date"), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }
 
