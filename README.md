@@ -11,15 +11,15 @@
 
 # AR Touchpad ✨
 
-Use your Android phone as a trackpad and app launcher for an external monitor or glasses. Point, scroll, type, and settle in for a film with the phone tucked away in Pocket mode.
+Use your Android phone as a trackpad for an external monitor or display glasses. Tap the phone with four fingers to bring up Launchpad on the connected screen. From there you can open a pinned app, see what’s playing, or adjust the volume. When you settle in for a film, hold four fingers to lock the touchpad and slip the phone into your pocket.
 
-**👓 Works with XREAL One Pro.** This fork is developed and tested primarily with **XREAL One Pro glasses connected to a Pixel 9**—the everyday setup behind these features and fixes.
+**Tested on a desk and with glasses.** This fork has been used with a 27-inch monitor and with XREAL One Pro glasses connected to a Pixel 9. Your phone needs to support desktop or extended-display mode.
 
 **Built on [AR Touchpad by Paul Gratz](https://github.com/pgratz1/AR-Touchpad).** The original project supplies the foundation: a real Android system cursor, a Shizuku-powered virtual mouse, and touchpad gestures for an extended display. This [fork by mickcarey](https://github.com/mickcarey/AR-Touchpad) builds on that work with fullscreen controls, Pocket mode, external settings, orientation calibration, and reliability improvements. Thank you, Paul! 💛
 
 **Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/AR-Touchpad/fork), tweak it, and make it fit your own workflow!
 
-[What's new](#-what-this-fork-adds) · [Gestures](#-the-gesture-cheat-sheet) · [Fixes](#-smoother-more-reliable) · [Setup](#-get-going) · [Build](#-build-and-check)
+[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Build](#-build-and-check)
 
 ## 🌈 What this fork adds
 
@@ -39,11 +39,21 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
 
-Tap four fingers to open Launchpad. The header shows local time in the phone’s 12/24-hour format, with the day and date underneath. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. A green check marks each new selection. The launcher fits above the on-screen keyboard when it opens on the same display. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
+The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to eight tiles per row, including the dashed **Add App** circle.
 
-Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to show the active player’s icon, title, and artist or subtitle below the header. Tap the title to return to the player or browser. Spotify album art and Jellyfin cover art appear on the right when the player supplies an image. For Jellyfin’s series name, episode number, or movie year, open **Jellyfin notification access** and allow the app on the phone. The app matches Jellyfin’s playback notification to the active media session. Tap outside the launcher to dismiss it, or use **Home** to return from Settings.
+- **Pin apps.** Choose **Add App** and type to filter the installed apps. Select as many as you want, then confirm at the bottom of the picker. A green tick marks each selection. Already-pinned apps are greyed out. When the on-screen keyboard opens on the same display, the launcher sits above it.
+- **Open or remove a shortcut.** Select a pinned app to open it on the chosen display, or on the phone when disconnected. To unpin it, right-click or long-press its icon and confirm **Remove shortcut**. The app stays installed on your phone.
+- **Find Settings.** Select the cog beside **Information**. Choose **Home** to return to your apps, or tap outside Launchpad to dismiss it. In **Personalise**, choose from ten colour schemes and four text sizes for both screens. The defaults are **Vanilla8** and **125%** of the system text size.
 
-Enable **Room sound meter** and grant microphone access on the phone to see live microphone level and a three-second peak in dBFS. For a leakage check, keep the phone beside the listener with its microphone uncovered. Choose **Set quiet reference** before playback to compare the live reading with the previous second of quiet. The reference lasts for the current microphone session. These relative levels depend on the phone and its microphone gain. Measuring absolute dB SPL requires acoustic calibration. AR Touchpad processes the samples in memory and releases the mic when monitoring ends. With Launchpad closed, a click-through badge on the external display shows the enabled meter and the Pocket lock symbol.
+#### Now playing
+
+Turn on **Settings → Personalise → Now playing** to see the player’s icon, title, and artist or subtitle beneath the playback controls. Select the title to return to the app or browser. Spotify can supply album art, and Jellyfin can supply cover art. If Jellyfin shows only an episode title, choose **Jellyfin notification access** and grant access on the phone so Launchpad can also use the series name, episode number, or movie year when available.
+
+#### Check how much sound reaches the bedside
+
+Under **Settings → Personalise**, enable **Room sound meter** and grant microphone access. Place the phone near the listener with the microphone uncovered. While the room is quiet, choose **Set quiet reference**, then start playback. The change in dB shows how far the microphone signal rises above that baseline. The external display badge keeps the live level and three-second peak visible after you close Launchpad, alongside the lock symbol when Pocket mode is active.
+
+The meter reads the phone microphone in **dBFS**. Absolute room loudness in dB SPL requires acoustic calibration. Audio is processed in memory, and the quiet reference lasts for the current microphone session.
 
 ### Debug updates for UAT
 
@@ -130,7 +140,7 @@ The main development and testing setup for this fork is **Pixel 9 + XREAL One Pr
 2. Build and install AR Touchpad using the commands below.
 3. Open the app and grant its Shizuku request. Use **Retry connection** if the mouse does not connect automatically.
 4. Connect your glasses or display and select **Desktop / Extended** mode. You can connect before opening the app, too.
-5. Tap four fingers to open settings and make yourself comfortable. ✨
+5. Tap four fingers to open Launchpad. Choose **Add App** to pin your first shortcut, or open the cog to adjust the text size and pointer speed.
 
 ## 🔧 Build and check
 
