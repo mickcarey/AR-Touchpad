@@ -183,9 +183,9 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                 }
             },
-            apps = { onAdd ->
-                PinnedApps(catalog, state.launchpad.pinned, onAdd,
-                    onRemove = { ids -> viewModel.updateLaunchpad { it.copy(pinned = it.pinned - ids) } },
+            onRemoveShortcuts = { ids -> viewModel.updateLaunchpad { it.copy(pinned = it.pinned - ids) } },
+            apps = { onAdd, requestRemoval ->
+                PinnedApps(catalog, state.launchpad.pinned, onAdd, requestRemoval,
                     onLaunch = { shortcut ->
                         launcher.launch(catalogContext, shortcut, state.targetDisplay?.id ?: android.view.Display.DEFAULT_DISPLAY)
                         viewModel.closeSettings()

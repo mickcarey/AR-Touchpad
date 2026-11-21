@@ -1,7 +1,5 @@
 package au.com.michaelcarey.artouchpad
 
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -87,11 +85,10 @@ class SettingsUiTest {
     @Test fun phoneMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(360)
     @Test fun wideOverviewAlignsDateActionsAndSettingsTabs() {
         mediaPanel(1000)
-        val left = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
-        val right = compose.onNodeWithTag("connection-pane").getUnclippedBoundsInRoot()
-        assertEquals((left.right - left.left).value, (right.right - right.left).value, 1f)
-        assertTrue(left.right < right.left)
+        val apps = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
+        assertEquals(header.left.value + 24f, apps.left.value, 1f)
+        assertEquals(header.right.value - 24f, apps.right.value, 1f)
         val title = compose.onNodeWithText("Launchpad").getUnclippedBoundsInRoot()
         val info = compose.onNodeWithContentDescription("Information").getUnclippedBoundsInRoot()
         val cog = compose.onNodeWithContentDescription("Settings").getUnclippedBoundsInRoot()
@@ -100,42 +97,62 @@ class SettingsUiTest {
         assertTrue(title.bottom <= date.top)
         assertTrue(title.right <= info.left && info.right <= cog.left)
         assertTrue("Settings cog should sit at the trailing edge", (header.right - cog.right).value in 16f..22f)
-        compose.onNodeWithContentDescription("Close Launchpad").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Close settings").assertDoesNotExist()
         compose.onNodeWithText("App library").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
         val firstTab = compose.onNodeWithText("Personalise").assertIsSelected().getUnclippedBoundsInRoot()
         val lastTab = compose.onNodeWithText("Connection").getUnclippedBoundsInRoot()
         assertTrue(firstTab.top >= header.bottom + 12.dp)
         assertEquals((header.left.value + header.right.value) / 2, (firstTab.left.value + lastTab.right.value) / 2, 1f)
-        compose.onNodeWithContentDescription("Settings").performClick()
+        val close = compose.onNodeWithContentDescription("Close settings")
+        assertTrue(close.getUnclippedBoundsInRoot().left >= lastTab.right)
+        close.performClick()
         compose.onNodeWithTag("apps-pane").assertExists()
+        close.assertDoesNotExist()
     }
     @Test fun dateLabelFollowsLocalTimeAndHourPreference() {
         val brisbane = java.time.ZonedDateTime.parse("2026-11-21T20:21:00+10:00[Australia/Brisbane]")
         fun label(time: java.time.ZonedDateTime, use24Hours: Boolean) =
             au.com.michaelcarey.artouchpad.ui.launchpadDateLabel(time, java.util.Locale.ENGLISH, use24Hours)
-        assertEquals("Saturday, 21 November 2026 · 8:21pm (Brisbane)", label(brisbane, false))
-        assertEquals("Saturday, 21 November 2026 · 20:21 (Brisbane)", label(brisbane, true))
+        assertEquals("8:21pm - Sat, 21 Nov 2026", label(brisbane, false))
+        assertEquals("20:21 - Sat, 21 Nov 2026", label(brisbane, true))
         val honolulu = brisbane.plusHours(15).withZoneSameInstant(java.time.ZoneId.of("Pacific/Honolulu"))
-        assertEquals("Saturday, 21 November 2026 · 3:21pm (Honolulu)", label(honolulu, false))
+        assertEquals("3:21pm - Sat, 21 Nov 2026", label(honolulu, false))
     }
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
         val visible = androidx.compose.runtime.mutableStateOf(false)
+        val title = "Night train — Live from the concert hall, with the full ensemble and special guests"
         compose.setContent {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-                mediaEnabled = true, mediaState = MediaState(title = "Night train", subtitle = "Kyoto"),
-                showTitle = visible.value, apps = { Text("Pinned apps") }, appearance = { Text("Appearance") })
+                mediaEnabled = true, mediaState = MediaState(title = title, subtitle = "Kyoto"),
+                showTitle = visible.value, apps = { _, _ -> Text("Add App") }, appearance = { Text("Appearance") })
         }
-        compose.onNodeWithText("Pinned apps").assertIsDisplayed()
+        compose.onNodeWithText("Add App").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertDoesNotExist()
-        compose.onNodeWithText("Night train · Kyoto").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing").assertDoesNotExist()
         compose.runOnIdle { visible.value = true }
-        compose.onNodeWithText("Night train · Kyoto").assertIsDisplayed()
+        compose.onNodeWithText(title).assertIsDisplayed().performSemanticsAction(
+            androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { getLayout ->
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            assertTrue(getLayout(layouts))
+            assertFalse(layouts.single().hasVisualOverflow)
+        }
+        compose.onNodeWithText("Kyoto").assertIsDisplayed()
+        val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
+        val strip = compose.onNodeWithTag("now-playing").getUnclippedBoundsInRoot()
+        assertEquals(header.left, strip.left)
+        assertEquals(header.right, strip.right)
+        assertTrue(strip.top >= header.bottom)
+        assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        java.io.File(context.getExternalFilesDir(null), "now-playing-panel.png").outputStream().use {
+            compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
-        compose.onNodeWithText("Pinned apps").assertDoesNotExist()
+        compose.onNodeWithText("Add App").assertDoesNotExist()
     }
     @Test fun disconnectedMediaControlsStayVisibleButDisabled() {
         mediaPanel(360, enabled = false)
@@ -169,6 +186,7 @@ class SettingsUiTest {
         compose.onNodeWithContentDescription("Mute").assertIsDisplayed()
         compose.onNodeWithText("75%").assertIsDisplayed()
     }
+    @OptIn(ExperimentalTestApi::class)
     @Test fun canPinAndRemoveAnInstalledLauncherActivity() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val catalog = AppLauncher(InstalledApps).catalog(context)
@@ -177,8 +195,9 @@ class SettingsUiTest {
         compose.setContent {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-                apps = { open ->
-                    au.com.michaelcarey.artouchpad.ui.PinnedApps(catalog, pins.value, open, { pins.value -= it }, {})
+                onRemoveShortcuts = { pins.value -= it },
+                apps = { open, requestRemoval ->
+                    au.com.michaelcarey.artouchpad.ui.PinnedApps(catalog, pins.value, open, requestRemoval, { fail("Opening the menu launched the app") })
                 },
                 appPicker = { dismiss ->
                     au.com.michaelcarey.artouchpad.ui.AppPicker(catalog, pins.value, dismiss) {
@@ -214,8 +233,32 @@ class SettingsUiTest {
         compose.onNodeWithText("Add 2 Apps").performClick()
         compose.runOnIdle { assertEquals(setOf(first.id, second.id), pins.value) }
         compose.onNodeWithText(first.label).performTouchInput { longClick() }
-        compose.onNodeWithText("Unpin ${first.label}").performClick()
+        compose.onNodeWithText("Remove shortcut").performClick()
+        compose.onNodeWithText("Remove ${first.label} from quick launch?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertEquals(setOf(first.id, second.id), pins.value) }
+        compose.onNodeWithText(first.label).performMouseInput { rightClick() }
+        compose.onNodeWithText("Remove shortcut").performClick()
+        compose.onNodeWithText("The app stays installed on your device.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Remove").performClick()
         compose.runOnIdle { assertEquals(setOf(second.id), pins.value) }
+    }
+
+    @Test fun longAppLabelsHaveOneEllipsizedLine() {
+        val label = "TeamViewer Remote Control"
+        val shortcut = AppShortcut("test/long", label, android.graphics.Bitmap.createBitmap(10, 10,
+            android.graphics.Bitmap.Config.ARGB_8888), android.content.Intent())
+        compose.setContent {
+            au.com.michaelcarey.artouchpad.ui.PinnedApps(listOf(shortcut), setOf(shortcut.id), {}, {}, {})
+        }
+        compose.onNodeWithText("Pinned apps").assertDoesNotExist()
+        compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(
+            androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { getLayout ->
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            assertTrue(getLayout(layouts))
+            assertEquals(1, layouts.single().lineCount)
+            assertTrue(layouts.single().isLineEllipsized(0))
+        }
     }
 
     @Test fun fourFingerTapClosesPhoneSettingsOnceWithoutDoneButton() {
@@ -252,7 +295,7 @@ class SettingsUiTest {
         compose.onNodeWithText("Four-finger tap", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Open / close Launchpad", useUnmergedTree = true).assertExists()
         compose.onAllNodes(hasText("Settings fallback", substring = true)).assertCountEquals(0)
-        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithContentDescription("Close information").performClick()
         compose.onNodeWithText("Done").assertDoesNotExist()
         compose.onNodeWithContentDescription("Information").assertExists()
     }

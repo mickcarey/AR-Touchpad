@@ -461,8 +461,8 @@ class ConnectedInputTest {
             val attrs = overlay!!.window!!.attributes
             assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, attrs.type)
             assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
-            assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
-            assertTrue(attrs.blurBehindRadius > 0)
+            assertEquals(0, attrs.flags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, attrs.blurBehindRadius)
             assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
             assertTrue(attrs.dimAmount in 0.05f..0.22f)
             assertEquals(vm.state.value.targetDisplay!!.id, overlay!!.display.displayId)
@@ -471,6 +471,13 @@ class ConnectedInputTest {
         }
         await("Overlay did not dismiss") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+    }
+
+    private fun captureExternalPanel(filename: String) {
+        main.onActivity { activity ->
+            val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
+            captureOverlay(field.get(activity) as SettingsOverlay, filename)
+        }
     }
 
     private fun captureOverlay(overlay: SettingsOverlay, filename: String) {
@@ -494,8 +501,11 @@ class ConnectedInputTest {
             for (i in 0 until node.childCount) find(node.getChild(i), match)?.let { return it }
             return null
         }
-        fun node(match: (AccessibilityNodeInfo) -> Boolean) = automation.windowsOnAllDisplays[target].orEmpty()
-            .mapNotNull { it.root }.filter { it.packageName == context.packageName }.firstNotNullOfOrNull { find(it, match) }
+        fun node(match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            automation.clearCache()
+            return automation.windowsOnAllDisplays[target].orEmpty().mapNotNull { it.root }
+                .filter { it.packageName == context.packageName }.firstNotNullOfOrNull { find(it, match) }
+        }
         fun click(match: (AccessibilityNodeInfo) -> Boolean) {
             var action: AccessibilityNodeInfo? = null
             await("External picker control unavailable") {
@@ -508,14 +518,38 @@ class ConnectedInputTest {
             info.flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             automation.serviceInfo = info
             main.onActivity { vm.openSettings() }
+            click { it.contentDescription?.toString() == "Information" }
+            await("Information did not open") { node { it.text?.toString() == "Pointer gestures" } != null }
+            captureExternalPanel("information-overlay.png")
+            click { it.contentDescription?.toString() == "Close information" }
+            await("Closing information did not restore the launcher") { node { it.text?.toString() == "Add App" } != null }
+            val shortcut = AppLauncher(InstalledApps).catalog(context).minBy { it.label.length }
+            main.onActivity { vm.updateLaunchpad { it.copy(pinned = it.pinned + shortcut.id) } }
+            await("Pinned tile missing") { node { it.text?.toString() == shortcut.label || it.contentDescription?.toString() == shortcut.label } != null }
+            val bounds = android.graphics.Rect()
+            node { it.text?.toString() == shortcut.label || it.contentDescription?.toString() == shortcut.label }!!.getBoundsInScreen(bounds)
+            val pointer = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE }
+            val coords = MotionEvent.PointerCoords().apply { x = bounds.exactCenterX(); y = bounds.exactCenterY() }
+            val downTime = SystemClock.uptimeMillis()
+            fun sendMouse(action: Int, buttons: Int) {
+                val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, 1, arrayOf(pointer),
+                    arrayOf(coords), 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+                try {
+                    HiddenApiBypass.invoke(android.view.InputEvent::class.java, event, "setDisplayId", target)
+                    assertTrue(automation.injectInputEvent(event, true))
+                } finally { event.recycle() }
+            }
+            sendMouse(MotionEvent.ACTION_DOWN, MotionEvent.BUTTON_SECONDARY)
+            sendMouse(MotionEvent.ACTION_UP, 0)
+            click { it.text?.toString() == "Remove shortcut" }
+            await("Confirmation missing") { node { it.text?.toString()?.contains("stays installed") == true } != null }
+            click { it.text?.toString() == "Cancel" }
+            assertTrue(shortcut.id in vm.state.value.launchpad.pinned)
             click { it.text?.toString() == "Add App" }
             await("External app list not ready") {
                 node { it.isEditable } != null && node { it.className == "android.widget.CheckBox" } != null
             }
-            main.onActivity { activity ->
-                val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
-                captureOverlay(field.get(activity) as SettingsOverlay, "app-picker.png")
-            }
+            captureExternalPanel("app-picker.png")
             click { it.isEditable }
             await("Search field did not gain focus") { node { it.isEditable && it.isFocused } != null }
             android.os.ParcelFileDescriptor.AutoCloseInputStream(
@@ -523,7 +557,7 @@ class ConnectedInputTest {
             await("External keyboard did not filter apps") { node { it.text?.toString() == "No matching apps" } != null }
             click { it.text?.toString() == "Cancel" }
             await("Cancel did not restore external focus") {
-                InputProbeActivity.focused && node { it.text?.toString() == "Pinned apps" } != null
+                InputProbeActivity.focused && node { it.text?.toString() == "Add App" } != null && node { it.isEditable } == null
             }
             assertTrue(vm.state.value.showSettings)
         } finally {
@@ -590,14 +624,15 @@ class ConnectedInputTest {
                 override fun onSkipToPrevious() { commands += "previous" }
             }, android.os.Handler(android.os.Looper.getMainLooper()))
             playback(android.media.session.PlaybackState.STATE_PLAYING)
+            val fullTitle = "Test film ".repeat(30).trimEnd()
             session.setMetadata(android.media.MediaMetadata.Builder()
-                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Test film")
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, fullTitle)
                 .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Test artist").build())
             session.isActive = true
             await("Test media session not selected; will not send commands to another player") {
                 service.mediaState.getString("sessionPackage") == context.packageName
             }
-            assertEquals("Test film", service.mediaState.getString("title"))
+            assertEquals(fullTitle, service.mediaState.getString("title"))
             assertEquals("Test artist", service.mediaState.getString("subtitle"))
             assertEquals(1, service.mediaState.getInt("playing", -1))
             assertTrue(service.sendMediaControl(KeyEvent.KEYCODE_MEDIA_PAUSE))

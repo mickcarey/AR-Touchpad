@@ -1,7 +1,12 @@
 package au.com.michaelcarey.artouchpad.ui
 
 import android.view.KeyEvent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,7 +31,6 @@ internal fun SettingsHeader(
     mediaState: MediaState = MediaState(),
     availableBuild: TouchpadBuild? = null,
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
-    showTitle: Boolean = false,
     indicators: @Composable () -> Unit = {},
     settingsOpen: Boolean = false,
     onSettings: () -> Unit = {},
@@ -54,7 +58,7 @@ internal fun SettingsHeader(
                     }
                     if (inlineMedia) LaunchpadDate()
                 }
-                if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState, showTitle)
+                if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState)
                 // Equal side widths keep media centered in the whole header, independent of title/actions.
                 Row(if (inlineMedia) Modifier.weight(1f) else Modifier,
                     verticalAlignment = Alignment.CenterVertically,
@@ -73,7 +77,7 @@ internal fun SettingsHeader(
             }
             if (!inlineMedia) LaunchpadDate()
             if (!inlineMedia) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                MediaButtons(mediaEnabled, onMediaKey, mediaState, showTitle)
+                MediaButtons(mediaEnabled, onMediaKey, mediaState)
             }
             indicators()
         }
@@ -91,45 +95,60 @@ private enum class MediaControl(val icon: Int, val description: String, val keyC
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MediaButtons(enabled: Boolean, onMediaKey: (Int) -> Unit, state: MediaState, showTitle: Boolean) {
+private fun MediaButtons(enabled: Boolean, onMediaKey: (Int) -> Unit, state: MediaState) {
     Column(Modifier.widthIn(max = 288.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-    if (showTitle && enabled && !state.title.isNullOrBlank()) {
-        Text(listOfNotNull(state.title, state.subtitle?.takeUnless { it.isBlank() || it == state.title }).joinToString(" · "),
-            style = MaterialTheme.typography.titleSmall, maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-    }
-    FlowRow(horizontalArrangement = Arrangement.Center) {
-        MediaControl.entries.forEach { control ->
-            val (icon, description, key) = when (control) {
-                MediaControl.PLAY_PAUSE -> when (state.playing) {
-                    true -> Triple(R.drawable.ic_media_pause, "Pause", KeyEvent.KEYCODE_MEDIA_PAUSE)
-                    false -> Triple(R.drawable.ic_media_play, "Play", KeyEvent.KEYCODE_MEDIA_PLAY)
-                    null -> Triple(control.icon, control.description, control.keyCode)
+        FlowRow(horizontalArrangement = Arrangement.Center) {
+            MediaControl.entries.forEach { control ->
+                val (icon, description, key) = when (control) {
+                    MediaControl.PLAY_PAUSE -> when (state.playing) {
+                        true -> Triple(R.drawable.ic_media_pause, "Pause", KeyEvent.KEYCODE_MEDIA_PAUSE)
+                        false -> Triple(R.drawable.ic_media_play, "Play", KeyEvent.KEYCODE_MEDIA_PLAY)
+                        null -> Triple(control.icon, control.description, control.keyCode)
+                    }
+                    MediaControl.MUTE -> when (state.muted) {
+                        true -> Triple(R.drawable.ic_media_unmute, "Unmute", control.keyCode)
+                        false -> Triple(control.icon, "Mute", control.keyCode)
+                        null -> Triple(control.icon, control.description, control.keyCode)
+                    }
+                    else -> Triple(control.icon, control.description, control.keyCode)
                 }
-                MediaControl.MUTE -> when (state.muted) {
-                    true -> Triple(R.drawable.ic_media_unmute, "Unmute", control.keyCode)
-                    false -> Triple(control.icon, "Mute", control.keyCode)
-                    null -> Triple(control.icon, control.description, control.keyCode)
+                IconButton(onClick = { onMediaKey(key) }, enabled = enabled,
+                    modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(icon), contentDescription = description,
+                        modifier = Modifier.size(24.dp), tint = if (control == MediaControl.MUTE && state.muted == true)
+                            MaterialTheme.colorScheme.primary else LocalContentColor.current)
                 }
-                else -> Triple(control.icon, control.description, control.keyCode)
-            }
-            IconButton(onClick = { onMediaKey(key) }, enabled = enabled,
-                modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(icon), contentDescription = description,
-                    modifier = Modifier.size(24.dp), tint = if (control == MediaControl.MUTE && state.muted == true)
-                        MaterialTheme.colorScheme.primary else LocalContentColor.current)
             }
         }
-    }
-    if (enabled && state.maxVolume > 0) {
-        Row(Modifier.width(260.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            LinearProgressIndicator(progress = { state.volumeFraction }, modifier = Modifier.weight(1f)
-                .testTag("media-volume-level"))
-            Text(if (state.muted == true) "Muted" else "${(state.volumeFraction * 100).roundToInt()}%",
-                style = MaterialTheme.typography.labelSmall)
+        if (enabled && state.maxVolume > 0) {
+            Row(Modifier.width(260.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LinearProgressIndicator(progress = { state.volumeFraction }, modifier = Modifier.weight(1f)
+                    .testTag("media-volume-level"))
+                Text(if (state.muted == true) "Muted" else "${(state.volumeFraction * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelSmall)
+            }
         }
+        state.error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     }
-    state.error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
+    val title = state.title.orEmpty().trim()
+    val subtitle = state.subtitle.orEmpty().trim()
+    AnimatedVisibility(visible = enabled && title.isNotEmpty(),
+        enter = expandVertically(expandFrom = Alignment.Top),
+        exit = shrinkVertically(shrinkTowards = Alignment.Top)) {
+        Surface(Modifier.fillMaxWidth().testTag("now-playing"), color = MaterialTheme.colorScheme.surfaceContainer) {
+            Column(Modifier.heightIn(max = 156.dp).verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Now playing", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                if (subtitle.isNotEmpty() && subtitle != title) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }

@@ -37,9 +37,9 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ### Launchpad
 
-Tap four fingers to open Launchpad. The date beneath the title follows the phone’s time zone and 12/24-hour preference. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Long-press a pinned app to unpin it. A pin opens on the selected external display, or on the phone when disconnected.
+Tap four fingers to open Launchpad. The date beneath the title follows the phone’s time zone and 12/24-hour preference. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
 
-Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to see the title and subtitle supplied by the active media session.
+Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to show the active player’s title and artist or subtitle in a full-width strip below the header.
 
 Enable **Room sound meter** and grant microphone access on the phone to see live microphone level and a three-second peak in dBFS. For a leakage check, keep the phone beside the listener with its microphone uncovered. Choose **Set quiet reference** before playback to compare the live reading with the previous second of quiet. The reference lasts for the current microphone session. These relative levels depend on the phone and its microphone gain. Measuring absolute dB SPL requires acoustic calibration. AR Touchpad processes the samples in memory and releases the mic when monitoring ends. With Launchpad closed, a click-through badge on the external display shows the enabled meter and the Pocket lock symbol.
 
@@ -64,7 +64,7 @@ Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers
 
 Need to change something? Tap four fingers to open Launchpad on the external display. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
-The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running with a lightly dimmed backdrop and subtle blur on supported devices. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
+The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running with a lightly dimmed backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
 
 ### Calibration that fits your grip
 

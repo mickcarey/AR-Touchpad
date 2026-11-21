@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.icu.text.TimeZoneNames
 import android.text.format.DateFormat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,12 +42,10 @@ internal fun LaunchpadDate() {
 
 internal fun launchpadDateLabel(now: ZonedDateTime, locale: Locale, use24Hours: Boolean): String {
     val english = locale.language == "en"
-    val datePattern = if (english) "EEEE, d MMMM yyyy" else DateFormat.getBestDateTimePattern(locale, "yMMMMEEEEd")
+    val datePattern = if (english) "EEE, d MMM yyyy" else DateFormat.getBestDateTimePattern(locale, "yMMMEEEd")
     val timePattern = if (english && !use24Hours) "h:mma"
         else DateFormat.getBestDateTimePattern(locale, if (use24Hours) "Hm" else "hma")
     val date = now.format(DateTimeFormatter.ofPattern(datePattern, locale))
     val time = now.format(DateTimeFormatter.ofPattern(timePattern, locale))
-    val zone = TimeZoneNames.getInstance(locale).getExemplarLocationName(now.zone.id)
-        ?: now.format(DateTimeFormatter.ofPattern("z", locale))
-    return "$date · ${if (english) time.lowercase(locale) else time} ($zone)"
+    return "${if (english) time.lowercase(locale) else time} - $date"
 }
