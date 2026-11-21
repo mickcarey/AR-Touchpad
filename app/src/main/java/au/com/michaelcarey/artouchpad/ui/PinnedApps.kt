@@ -36,11 +36,14 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
     var menuApp by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val items = apps.orEmpty()
             val colors = MaterialTheme.colorScheme
             val iconSize = 52.dp
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 10,
+                horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AppTile("Add App", Modifier.clickable(role = Role.Button, onClick = onAdd)) {
                     Box(Modifier.size(iconSize).drawBehind {
                         val stroke = 1.5.dp.toPx()

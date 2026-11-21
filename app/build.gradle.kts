@@ -32,8 +32,8 @@ android {
         // the DisplayManager APIs used to detect the glasses as a secondary display.
         minSdk = 34
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.2"
         manifestPlaceholders["appLabel"] = "AR Touchpad"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {

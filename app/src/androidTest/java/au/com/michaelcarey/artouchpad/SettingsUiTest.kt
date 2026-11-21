@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -293,19 +294,31 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertIsNotEnabled()
     }
 
-    @Test fun elevenQuickLaunchTilesFitAcrossTheWidePanel() {
+    @Test fun pinnedRowsAreCentredAndWrapAtTenTilesOrTheAvailableWidth() {
         val icon = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
         val apps = (1..11).map { AppShortcut("test/$it", "App $it", icon, android.content.Intent()) }
+        val width = androidx.compose.runtime.mutableStateOf(1072.dp)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                Box(Modifier.width(1072.dp)) {
+                Box(Modifier.width(width.value).testTag("pins-container")) {
                     au.com.michaelcarey.artouchpad.ui.PinnedApps(apps, apps.map { it.id }.toSet(), {}, {}, {})
                 }
             }
         }
-        val first = compose.onNodeWithText("Add App").getUnclippedBoundsInRoot()
-        assertEquals(first.top, compose.onNodeWithText("App 10").getUnclippedBoundsInRoot().top)
-        assertTrue(compose.onNodeWithText("App 11").getUnclippedBoundsInRoot().top > first.top)
+        fun checkRows(tilesPerRow: Int) {
+            val panel = compose.onNodeWithTag("pins-container").getUnclippedBoundsInRoot()
+            val tiles = (listOf("Add App") + apps.map { it.label }).map {
+                compose.onNodeWithText(it).getUnclippedBoundsInRoot()
+            }
+            val rows = tiles.groupBy { it.top }.values
+            assertEquals(tiles.chunked(tilesPerRow).map { it.size }, rows.map { it.size })
+            for (row in rows) {
+                assertEquals((row.first().left - panel.left).value, (panel.right - row.last().right).value, 1f)
+            }
+        }
+        checkRows(10)
+        compose.runOnIdle { width.value = 360.dp }
+        checkRows(3)
     }
 
     @Test fun launcherBoundsFollowTheOnScreenKeyboard() {
