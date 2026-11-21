@@ -466,18 +466,70 @@ class ConnectedInputTest {
             assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
             assertTrue(attrs.dimAmount in 0.05f..0.22f)
             assertEquals(vm.state.value.targetDisplay!!.id, overlay!!.display.displayId)
-            // Capture the real external overlay for visual review, not the phone fallback.
-            val view = overlay!!.window!!.decorView
-            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
-            view.draw(android.graphics.Canvas(bitmap))
-            java.io.File(context.getExternalFilesDir(null), "settings-overlay.png").outputStream().use {
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-            }
-            bitmap.recycle()
+            captureOverlay(overlay!!, "settings-overlay.png")
             vm.closeSettings()
         }
         await("Overlay did not dismiss") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+    }
+
+    private fun captureOverlay(overlay: SettingsOverlay, filename: String) {
+        val view = overlay.window!!.decorView
+        val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        view.draw(android.graphics.Canvas(bitmap))
+        java.io.File(context.getExternalFilesDir(null), filename).outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap.recycle()
+    }
+
+    @Test fun externalPickerAcceptsTypedSearchAndReturnsFocusOnCancel() {
+        receiveInput()
+        val target = vm.state.value.targetDisplay!!.id
+        val automation = instrumentation.uiAutomation
+        val info = automation.serviceInfo
+        val flags = info.flags
+        fun find(node: AccessibilityNodeInfo?, match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            if (node == null || match(node)) return node
+            for (i in 0 until node.childCount) find(node.getChild(i), match)?.let { return it }
+            return null
+        }
+        fun node(match: (AccessibilityNodeInfo) -> Boolean) = automation.windowsOnAllDisplays[target].orEmpty()
+            .mapNotNull { it.root }.filter { it.packageName == context.packageName }.firstNotNullOfOrNull { find(it, match) }
+        fun click(match: (AccessibilityNodeInfo) -> Boolean) {
+            var action: AccessibilityNodeInfo? = null
+            await("External picker control unavailable") {
+                action = generateSequence(node(match)) { it.parent }.firstOrNull { it.isClickable }
+                action != null
+            }
+            assertTrue(action!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        }
+        try {
+            info.flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            automation.serviceInfo = info
+            main.onActivity { vm.openSettings() }
+            click { it.text?.toString() == "Add App" }
+            await("External app list not ready") {
+                node { it.isEditable } != null && node { it.className == "android.widget.CheckBox" } != null
+            }
+            main.onActivity { activity ->
+                val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
+                captureOverlay(field.get(activity) as SettingsOverlay, "app-picker.png")
+            }
+            click { it.isEditable }
+            await("Search field did not gain focus") { node { it.isEditable && it.isFocused } != null }
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                automation.executeShellCommand("input -d $target text zzznomatch")).use { it.readBytes() }
+            await("External keyboard did not filter apps") { node { it.text?.toString() == "No matching apps" } != null }
+            click { it.text?.toString() == "Cancel" }
+            await("Cancel did not restore external focus") {
+                InputProbeActivity.focused && node { it.text?.toString() == "Pinned apps" } != null
+            }
+            assertTrue(vm.state.value.showSettings)
+        } finally {
+            info.flags = flags
+            automation.serviceInfo = info
+        }
     }
 
     @Test fun switchFromGlassesSettingsLaunchesProdOnPhone() {

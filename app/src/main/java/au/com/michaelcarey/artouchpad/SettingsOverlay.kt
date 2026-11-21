@@ -27,11 +27,27 @@ internal class SettingsOverlay(
     private val onRoomMeter: (Boolean) -> Unit,
 ) : Dialog(ContextThemeWrapper(owner.createDisplayContext(display)
     .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null), R.style.Theme_ARTouchpad)) {
+    private var dismissPicker: (() -> Unit)? = null
+
+    override fun cancel() {
+        dismissPicker?.let { it(); return }
+        super.cancel()
+    }
+
+    private fun setPickerFocus(dismiss: (() -> Unit)?) {
+        dismissPicker = dismiss
+        window?.apply {
+            if (dismiss != null) clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            else addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window?.apply {
             setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
             setDimAmount(0.16f)
@@ -51,7 +67,7 @@ internal class SettingsOverlay(
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
                 ARTouchpadTheme(viewModel.state.collectAsState().value.launchpad) {
-                    Launchpad(viewModel, onSwitchBuild, onRoomMeter, nonFocusable = true)
+                    Launchpad(viewModel, onSwitchBuild, onRoomMeter, nonFocusable = true, onPickerFocus = ::setPickerFocus)
                 }
             }
         }

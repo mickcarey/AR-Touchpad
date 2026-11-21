@@ -58,7 +58,7 @@ internal fun RecoverySettings(viewModel: TouchpadViewModel, state: TouchpadState
         OutlinedButton(onClick = viewModel::retryConnection) { Text("Retry connection") }
         HorizontalDivider()
         if (confirmReset) {
-            SupportingText("Reset preferences, pins, world clocks, saved profiles, display choice and calibration? This also unlocks Pocket mode.")
+            SupportingText("Reset preferences, pins, saved profiles, display choice and calibration? This also unlocks Pocket mode.")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
                 Button(onClick = { viewModel.resetDefaults(); confirmReset = false }) { Text("Reset all settings") }

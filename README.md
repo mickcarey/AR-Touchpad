@@ -27,7 +27,7 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 | --- | --- |
 | 🖤 **Fullscreen & black touchpad** | A phone-sized touch surface with hidden system bars. Choose pure black for a screen that looks off while staying awake. Swipe up from the bottom edge to open the app switcher. |
 | 🔒 **Pocket mode** | Keep watching while walking or exercising, without pocket bumps clicking or scrolling. Blocks trackpad input and hides the cursor; four-finger settings and unlock gestures still work. |
-| 🖥️ **Launchpad** | See local and world clocks, open pinned apps, and reach Settings without leaving the external display. |
+| 🖥️ **Launchpad** | See the local date and time, open pinned apps, and reach Settings without leaving the external display. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
 | ✋ **Four-finger shortcuts** | Tap four fingers together to open or close Launchpad; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
 | 🎨 **Drag-ready feedback** | After a configurable hold (600 ms by default), the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
@@ -37,7 +37,7 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ### Launchpad
 
-Tap four fingers to open Launchpad. The local clock follows the phone’s time zone and 12/24-hour preference. Choose **Settings → Personalise → World clocks** to add or remove cities. **Add App** opens the app library. Select apps to pin or remove them, then return to **Overview**. A pin opens on the selected external display, or on the phone when disconnected.
+Tap four fingers to open Launchpad. The date beneath the title follows the phone’s time zone and 12/24-hour preference. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Long-press a pinned app to unpin it. A pin opens on the selected external display, or on the phone when disconnected.
 
 Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to see the title and subtitle supplied by the active media session.
 

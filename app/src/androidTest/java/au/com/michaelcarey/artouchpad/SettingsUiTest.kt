@@ -85,25 +85,39 @@ class SettingsUiTest {
     }
 
     @Test fun phoneMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(360)
-    @Test fun wideOverviewUsesEqualColumnsAndCenteredTabs() {
+    @Test fun wideOverviewAlignsDateActionsAndSettingsTabs() {
         mediaPanel(1000)
         val left = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
-        val right = compose.onNodeWithTag("clock-pane").getUnclippedBoundsInRoot()
+        val right = compose.onNodeWithTag("connection-pane").getUnclippedBoundsInRoot()
         assertEquals((left.right - left.left).value, (right.right - right.left).value, 1f)
         assertTrue(left.right < right.left)
         val header = compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot()
-        val overview = compose.onNodeWithText("Overview").getUnclippedBoundsInRoot()
-        val library = compose.onNodeWithText("App library").getUnclippedBoundsInRoot()
-        assertEquals((header.left.value + header.right.value) / 2, (overview.left.value + library.right.value) / 2, 1f)
         val title = compose.onNodeWithText("Launchpad").getUnclippedBoundsInRoot()
         val info = compose.onNodeWithContentDescription("Information").getUnclippedBoundsInRoot()
         val cog = compose.onNodeWithContentDescription("Settings").getUnclippedBoundsInRoot()
+        val date = compose.onNodeWithTag("launchpad-date").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(title.left.value, date.left.value, 1f)
+        assertTrue(title.bottom <= date.top)
         assertTrue(title.right <= info.left && info.right <= cog.left)
-        compose.onNodeWithText("App library").performClick().assertIsSelected()
+        assertTrue("Settings cog should sit at the trailing edge", (header.right - cog.right).value in 16f..22f)
+        compose.onNodeWithContentDescription("Close Launchpad").assertDoesNotExist()
+        compose.onNodeWithText("App library").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Personalise").assertIsSelected()
+        val firstTab = compose.onNodeWithText("Personalise").assertIsSelected().getUnclippedBoundsInRoot()
+        val lastTab = compose.onNodeWithText("Connection").getUnclippedBoundsInRoot()
+        assertTrue(firstTab.top >= header.bottom + 12.dp)
+        assertEquals((header.left.value + header.right.value) / 2, (firstTab.left.value + lastTab.right.value) / 2, 1f)
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("App library").assertIsSelected()
+        compose.onNodeWithTag("apps-pane").assertExists()
+    }
+    @Test fun dateLabelFollowsLocalTimeAndHourPreference() {
+        val brisbane = java.time.ZonedDateTime.parse("2026-11-21T20:21:00+10:00[Australia/Brisbane]")
+        fun label(time: java.time.ZonedDateTime, use24Hours: Boolean) =
+            au.com.michaelcarey.artouchpad.ui.launchpadDateLabel(time, java.util.Locale.ENGLISH, use24Hours)
+        assertEquals("Saturday, 21 November 2026 · 8:21pm (Brisbane)", label(brisbane, false))
+        assertEquals("Saturday, 21 November 2026 · 20:21 (Brisbane)", label(brisbane, true))
+        val honolulu = brisbane.plusHours(15).withZoneSameInstant(java.time.ZoneId.of("Pacific/Honolulu"))
+        assertEquals("Saturday, 21 November 2026 · 3:21pm (Honolulu)", label(honolulu, false))
     }
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
@@ -112,7 +126,7 @@ class SettingsUiTest {
             SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
                 false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
                 mediaEnabled = true, mediaState = MediaState(title = "Night train", subtitle = "Kyoto"),
-                showTitle = visible.value, apps = { _, _ -> Text("Pinned apps") }, appearance = { Text("Appearance") })
+                showTitle = visible.value, apps = { Text("Pinned apps") }, appearance = { Text("Appearance") })
         }
         compose.onNodeWithText("Pinned apps").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertDoesNotExist()
@@ -157,25 +171,51 @@ class SettingsUiTest {
     }
     @Test fun canPinAndRemoveAnInstalledLauncherActivity() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
-        val app = AppLauncher(InstalledApps).catalog(context).groupBy { it.label }.values.first { it.size == 1 }.single()
+        val catalog = AppLauncher(InstalledApps).catalog(context)
+        val (first, second) = catalog.groupBy { it.label }.values.filter { it.size == 1 }.take(2).map { it.single() }
         val pins = androidx.compose.runtime.mutableStateOf(emptySet<String>())
-        val library = androidx.compose.runtime.mutableStateOf(false)
         compose.setContent {
-            androidx.compose.foundation.layout.Column(Modifier.verticalScroll(rememberScrollState())) {
-                au.com.michaelcarey.artouchpad.ui.PinnedApps(pins.value, null, library.value, { library.value = true },
-                    { pins.value = it }, {})
-            }
+            SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
+                false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                apps = { open ->
+                    au.com.michaelcarey.artouchpad.ui.PinnedApps(catalog, pins.value, open, { pins.value -= it }, {})
+                },
+                appPicker = { dismiss ->
+                    au.com.michaelcarey.artouchpad.ui.AppPicker(catalog, pins.value, dismiss) {
+                        pins.value += it
+                        dismiss()
+                    }
+                })
         }
         compose.onNodeWithText("Add App").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText(app.label).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(app.label).performScrollTo().performClick()
-        compose.runOnIdle { library.value = false }
-        compose.onNodeWithText(app.label).assertExists()
-        compose.runOnIdle { assertEquals(setOf(app.id), pins.value) }
-        compose.onNodeWithText("Add App").performScrollTo().performClick()
-        compose.onNodeWithText(app.label).performScrollTo().performClick()
-        compose.runOnIdle { library.value = false }
-        compose.onNodeWithText(app.label).assertDoesNotExist()
+        compose.onNodeWithText("Add App").assertIsNotEnabled()
+        val search = compose.onNodeWithTag("app-search")
+        val searchBounds = search.getUnclippedBoundsInRoot()
+        val cancelBounds = compose.onNodeWithText("Cancel").getUnclippedBoundsInRoot()
+        compose.onNodeWithTag("app-results").performScrollToNode(hasText(catalog.last().label))
+        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
+        assertEquals(cancelBounds, compose.onNodeWithText("Cancel").assertIsDisplayed().getUnclippedBoundsInRoot())
+        search.performTextReplacement(first.label.uppercase())
+        compose.onNode(hasText(first.label) and isToggleable()).performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(pins.value.isEmpty()) }
+        compose.onNodeWithText("Add App").performClick()
+        compose.onNodeWithTag("app-results").performScrollToNode(hasText(first.label))
+        compose.onNode(hasText(first.label) and isToggleable()).performClick()
+        compose.onNodeWithText("Add App").assertIsEnabled()
+        search.performTextReplacement(second.label)
+        compose.onNode(hasText(second.label) and isToggleable()).performClick()
+        search.performTextReplacement("zzzz-no-such-app")
+        compose.onNodeWithText("No matching apps").assertIsDisplayed()
+        compose.onNodeWithText("Clear").performClick()
+        compose.onNodeWithText("Selected").performClick()
+        compose.onNode(hasText(first.label) and isToggleable()).assertIsOn()
+        compose.onNode(hasText(second.label) and isToggleable()).assertIsOn()
+        compose.onNodeWithText("Add 2 Apps").performClick()
+        compose.runOnIdle { assertEquals(setOf(first.id, second.id), pins.value) }
+        compose.onNodeWithText(first.label).performTouchInput { longClick() }
+        compose.onNodeWithText("Unpin ${first.label}").performClick()
+        compose.runOnIdle { assertEquals(setOf(second.id), pins.value) }
     }
 
     @Test fun fourFingerTapClosesPhoneSettingsOnceWithoutDoneButton() {

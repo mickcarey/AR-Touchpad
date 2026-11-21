@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import au.com.michaelcarey.artouchpad.AppLauncher
+import au.com.michaelcarey.artouchpad.InstalledApps
 import au.com.michaelcarey.artouchpad.MultiFingerTapTracker
 import au.com.michaelcarey.artouchpad.TouchGestureEngine
 import au.com.michaelcarey.artouchpad.TouchMode
@@ -133,8 +135,12 @@ internal fun TouchpadScreen(viewModel: TouchpadViewModel, settingsOnPhone: Boole
 
 @Composable
 internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBuild) -> Unit,
-    onRoomMeter: (Boolean) -> Unit, nonFocusable: Boolean = false) {
+    onRoomMeter: (Boolean) -> Unit, nonFocusable: Boolean = false,
+    onPickerFocus: ((() -> Unit)?) -> Unit = {}) {
     val state by viewModel.state.collectAsState()
+    val launcher = remember { AppLauncher(InstalledApps) }
+    val catalogContext = LocalContext.current
+    val catalog = rememberAppCatalog(launcher)
     // Observe other players/hardware buttons only while settings is composed. Closing or
     // backgrounding settings cancels this work; no permanent polling of media sessions.
     LaunchedEffect(state.mouseReady) {
@@ -177,11 +183,24 @@ internal fun Launchpad(viewModel: TouchpadViewModel, onSwitchBuild: (TouchpadBui
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                 }
             },
-            apps = { library, onAdd ->
-                PinnedApps(state.launchpad.pinned, state.targetDisplay?.id, library, onAdd,
-                    { pins -> viewModel.updateLaunchpad { it.copy(pinned = pins) } }, viewModel::closeSettings)
+            apps = { onAdd ->
+                PinnedApps(catalog, state.launchpad.pinned, onAdd,
+                    onRemove = { ids -> viewModel.updateLaunchpad { it.copy(pinned = it.pinned - ids) } },
+                    onLaunch = { shortcut ->
+                        launcher.launch(catalogContext, shortcut, state.targetDisplay?.id ?: android.view.Display.DEFAULT_DISPLAY)
+                        viewModel.closeSettings()
+                    })
             },
-            clock = { LaunchpadClock(state.launchpad.worldZones) },
+            appPicker = { dismiss ->
+                DisposableEffect(Unit) {
+                    onPickerFocus(dismiss)
+                    onDispose { onPickerFocus(null) }
+                }
+                AppPicker(catalog, state.launchpad.pinned, dismiss) { ids ->
+                    viewModel.updateLaunchpad { it.copy(pinned = it.pinned + ids) }
+                    dismiss()
+                }
+            },
             recovery = { RecoverySettings(viewModel, state) },
             appearance = {
                 LaunchpadSettings(state.launchpad, viewModel::updateLaunchpad, onRoomMeter) {

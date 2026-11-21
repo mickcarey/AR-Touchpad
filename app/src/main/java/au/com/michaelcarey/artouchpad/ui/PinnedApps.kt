@@ -4,12 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.view.Display
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -32,14 +29,10 @@ import au.com.michaelcarey.artouchpad.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PinnedApps(pinned: Set<String>, displayId: Int?, library: Boolean,
-    onAdd: () -> Unit, onPins: (Set<String>) -> Unit, onLaunched: () -> Unit) {
+internal fun rememberAppCatalog(launcher: AppLauncher): List<AppShortcut>? {
     val context = LocalContext.current
-    val launcher = remember { AppLauncher(InstalledApps) }
     var revision by remember { mutableIntStateOf(0) }
-    var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) { revision++ }
@@ -57,14 +50,21 @@ internal fun PinnedApps(pinned: Set<String>, displayId: Int?, library: Boolean,
     LaunchedEffect(context, revision) {
         apps = withContext(Dispatchers.IO) { launcher.catalog(context) }
     }
-    SettingsSection(if (library) "Installed apps" else "Pinned apps",
-        if (library) "Select an app to pin it or remove it." else null) {
+    return apps
+}
+
+@OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: () -> Unit,
+    onRemove: (Set<String>) -> Unit, onLaunch: (AppShortcut) -> Unit) {
+    var menuApp by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    SettingsSection("Pinned apps") {
         val items = apps.orEmpty()
         val colors = MaterialTheme.colorScheme
         val iconSize = 52.dp
-        val tileShape = RoundedCornerShape(14.dp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!library) AppTile("Add App", Modifier.clickable(role = Role.Button, onClick = onAdd)) {
+            AppTile("Add App", Modifier.clickable(role = Role.Button, onClick = onAdd)) {
                 Box(Modifier.size(iconSize).drawBehind {
                     val stroke = 1.5.dp.toPx()
                     drawRoundRect(colors.primary.copy(alpha = 0.8f), Offset(stroke / 2, stroke / 2),
@@ -75,37 +75,37 @@ internal fun PinnedApps(pinned: Set<String>, displayId: Int?, library: Boolean,
                     drawLine(colors.primary, center - Offset(0f, arm), center + Offset(0f, arm), stroke)
                 })
             }
-            for (app in if (library) items else items.filter { it.id in pinned }) {
-                val selected = app.id in pinned
-                val action = if (library) Modifier.toggleable(selected, role = Role.Checkbox) {
-                    onPins(if (selected) pinned - app.id else pinned + app.id)
-                } else Modifier.clickable(role = Role.Button) {
-                    try {
-                        launcher.launch(context, app, displayId ?: Display.DEFAULT_DISPLAY)
-                        onLaunched()
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        error = "${app.label} is no longer available."
-                        revision++
-                    } catch (_: SecurityException) {
-                        error = "Android couldn’t open ${app.label} on this display."
-                    } catch (_: IllegalArgumentException) {
-                        error = "The selected display is unavailable."
+            for (app in items.filter { it.id in pinned }) {
+                Box {
+                    AppTile(app.label, Modifier.combinedClickable(role = Role.Button,
+                        onLongClickLabel = "Pin options", onLongClick = { menuApp = app.id },
+                        onClick = {
+                            try {
+                                onLaunch(app)
+                            } catch (_: android.content.ActivityNotFoundException) {
+                                error = "${app.label} is no longer available."
+                            } catch (_: SecurityException) {
+                                error = "Android couldn’t open ${app.label} on this display."
+                            } catch (_: IllegalArgumentException) {
+                                error = "The selected display is unavailable."
+                            }
+                        })) {
+                        Image(app.icon.asImageBitmap(), null, Modifier.size(iconSize))
                     }
-                }
-                AppTile(app.label, action) {
-                    Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-                        Image(app.icon.asImageBitmap(), null, Modifier.fillMaxSize())
-                        if (library && selected) Text("✓", Modifier.align(Alignment.BottomEnd)
-                            .background(colors.primary, tileShape).padding(horizontal = 4.dp),
-                            style = MaterialTheme.typography.labelSmall, color = colors.onPrimary)
+                    DropdownMenu(expanded = menuApp == app.id, onDismissRequest = { menuApp = null },
+                        properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+                        DropdownMenuItem(text = { Text("Unpin ${app.label}") }, onClick = {
+                            menuApp = null
+                            onRemove(setOf(app.id))
+                        })
                     }
                 }
             }
         }
         if (apps == null) SupportingText("Loading installed apps…")
-        if (library && apps != null) {
+        if (apps != null) {
             val missing = pinned - items.map { it.id }.toSet()
-            if (missing.isNotEmpty()) TextButton(onClick = { onPins(pinned - missing) }) {
+            if (missing.isNotEmpty()) TextButton(onClick = { onRemove(missing) }) {
                 Text("Remove unavailable pins (${missing.size})")
             }
         }

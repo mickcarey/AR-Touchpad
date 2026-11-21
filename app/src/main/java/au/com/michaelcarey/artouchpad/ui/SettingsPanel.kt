@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -75,13 +76,13 @@ internal fun SettingsPanel(
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
     showTitle: Boolean = false,
     indicators: @Composable () -> Unit = {},
-    apps: @Composable (Boolean, () -> Unit) -> Unit = { _, _ -> },
-    clock: @Composable () -> Unit = {},
+    apps: @Composable (() -> Unit) -> Unit = {},
+    appPicker: @Composable (() -> Unit) -> Unit = {},
     appearance: @Composable () -> Unit = {},
     recovery: @Composable () -> Unit = {},
 ) {
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
-    var library by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var pickingApps by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var settings by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     val dismiss by rememberUpdatedState(onDismiss)
@@ -89,7 +90,7 @@ internal fun SettingsPanel(
     if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo) {
         when {
             settings -> settings = false
-            library -> library = false
+            pickingApps -> pickingApps = false
             else -> onDismiss()
         }
     }
@@ -110,38 +111,33 @@ internal fun SettingsPanel(
                 }
             }
         }) {
-            Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
+            Surface(Modifier.fillMaxSize().then(if (showInfo || pickingApps) Modifier.clearAndSetSemantics {} else Modifier),
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = if (nonFocusable) 0.92f else 1f),
                 contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column {
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
-                        availableBuild, onSwitchBuild, showTitle, indicators, settings, { settings = !settings }, onDismiss)
+                        availableBuild, onSwitchBuild, showTitle, indicators, settings, { settings = !settings })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (settings) {
                         PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
-                    } else {
-                        PanelTabs(listOf("Overview", "App library"), if (library) "App library" else "Overview") {
-                            library = it == "App library"
-                        }
                     }
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
                         if (!settings) {
-                            val appsColumn: @Composable () -> Unit = {
-                                apps(library) { library = true }
-                                appControls()
-                            }
                             if (nonFocusable || maxWidth >= 640.dp) {
                                 Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp),
                                     horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                                    Column(Modifier.weight(1f).testTag("apps-pane").verticalScroll(key(library) { rememberScrollState() }),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)) { appsColumn() }
-                                    Column(Modifier.weight(1f).testTag("clock-pane").verticalScroll(rememberScrollState())) { clock() }
+                                    Column(Modifier.weight(1f).testTag("apps-pane").verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)) { apps { pickingApps = true } }
+                                    Column(Modifier.weight(1f).testTag("connection-pane").verticalScroll(rememberScrollState())) { appControls() }
                                 }
                             } else {
-                                Column(Modifier.fillMaxSize().verticalScroll(key(library) { rememberScrollState() }).padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(16.dp)) { appsColumn(); clock() }
+                                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    apps { pickingApps = true }
+                                    appControls()
+                                }
                             }
                             return@BoxWithConstraints
                         }
@@ -217,6 +213,7 @@ internal fun SettingsPanel(
                     }
                 }
             }
+            if (pickingApps) appPicker { pickingApps = false }
             if (showInfo) SettingsInfoDialog(allDisplays, targetDisplay) { showInfo = false }
         }
     }
@@ -224,11 +221,16 @@ internal fun SettingsPanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PanelTabs(tabs: List<String>, selected: String, onSelect: (String) -> Unit) {
-    FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.Center) {
+internal fun PanelTabs(tabs: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pill = RoundedCornerShape(50)
+    FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 14.dp, bottom = 4.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
         tabs.forEach { title ->
             val active = title == selected
-            Box(Modifier.selectable(selected = active, role = Role.Tab, onClick = { onSelect(title) })
+            Box(Modifier.clip(pill).background(if (active) colors.primary.copy(alpha = 0.16f) else colors.surfaceContainer)
+                .selectable(selected = active, role = Role.Tab, onClick = { onSelect(title) })
                 .heightIn(min = 48.dp).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                 Text(title, style = MaterialTheme.typography.titleSmall,
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)

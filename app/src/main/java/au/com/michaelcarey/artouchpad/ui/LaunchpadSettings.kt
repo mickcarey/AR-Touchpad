@@ -4,12 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import au.com.michaelcarey.artouchpad.LaunchpadPreferences
 import au.com.michaelcarey.artouchpad.ui.theme.LaunchpadPalette
-import java.time.ZoneId
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -35,22 +34,5 @@ internal fun LaunchpadSettings(prefs: LaunchpadPreferences, update: ((LaunchpadP
             prefs.roomMeter, onMeter)
         if (prefs.roomMeter) quietReference()
         SupportingText("For a bedside comparison, place the phone near the listener with its mic uncovered. Set a quiet reference before playback to see the change in dB. dBFS measures microphone signal level. Absolute room loudness in dB SPL requires acoustic calibration.")
-    }
-    SettingsSection("World clocks") {
-        val zones = remember { ZoneId.getAvailableZoneIds().filter { '/' in it && !it.startsWith("SystemV/") }.sorted() }
-        val regions = remember { zones.map { it.substringBefore('/') }.distinct() }
-        var region by remember { mutableStateOf("Asia") }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            prefs.worldZones.sorted().forEach { zone ->
-                InputChip(selected = true, onClick = { update { it.copy(worldZones = it.worldZones - zone) } },
-                    label = { Text("Remove ${city(zone)}") })
-            }
-        }
-        SettingsChoice("Region", region, "Choose a region to find a clock.", regions.map { it to it }) { region = it }
-        val choices = zones.filter { it.startsWith("$region/") && it !in prefs.worldZones }
-        if (choices.isNotEmpty()) SettingsChoice("Add clock", "Choose a city", "Local time follows your phone.",
-            choices.map { it to it.substringAfter('/').replace('_', ' ') }) { zone ->
-            update { it.copy(worldZones = it.worldZones + zone) }
-        }
     }
 }
