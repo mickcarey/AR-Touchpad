@@ -13,10 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import au.com.michaelcarey.artouchpad.R
 import au.com.michaelcarey.artouchpad.MediaState
 import au.com.michaelcarey.artouchpad.TouchpadBuild
@@ -41,23 +39,16 @@ internal fun SettingsHeader(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f)) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Launchpad", Modifier.align(Alignment.CenterVertically), fontSize = 28.sp,
-                            fontWeight = FontWeight.Medium)
-                        IconButton(onClick = onInformation, modifier = Modifier.align(Alignment.CenterVertically)) {
-                            Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
-                        }
-                        if (TouchpadBuild.current == TouchpadBuild.Debug) {
-                            Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                                Text("Debug", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    style = MaterialTheme.typography.labelSmall)
-                            }
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LaunchpadDate()
+                    if (TouchpadBuild.current == TouchpadBuild.Debug) {
+                        Surface(Modifier.align(Alignment.CenterVertically), shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                            Text("Debug", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                    if (inlineMedia) LaunchpadDate()
                 }
                 if (inlineMedia) MediaButtons(mediaEnabled, onMediaKey, mediaState)
                 // Equal side widths keep media centered in the whole header, independent of title/actions.
@@ -70,13 +61,15 @@ internal fun SettingsHeader(
                                 contentDescription = "Switch to ${availableBuild.name}")
                         }
                     }
+                    IconButton(onClick = onInformation) {
+                        Icon(painterResource(R.drawable.ic_settings_info), contentDescription = "Information")
+                    }
                     IconToggleButton(checked = settingsOpen, onCheckedChange = { onSettings() }) {
                         Icon(painterResource(R.drawable.ic_settings_cog), contentDescription = "Settings",
                             tint = if (settingsOpen) MaterialTheme.colorScheme.primary else LocalContentColor.current)
                     }
                 }
             }
-            if (!inlineMedia) LaunchpadDate()
             if (!inlineMedia) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 MediaButtons(mediaEnabled, onMediaKey, mediaState)
             }
@@ -143,8 +136,7 @@ internal fun NowPlayingStrip(enabled: Boolean, state: MediaState) {
         exit = shrinkVertically(shrinkTowards = Alignment.Top)) {
         Column(Modifier.fillMaxWidth().testTag("now-playing")) {
             Column(Modifier.fillMaxWidth().heightIn(max = 156.dp).verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                .padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface)
                 if (subtitle.isNotEmpty() && subtitle != title) {

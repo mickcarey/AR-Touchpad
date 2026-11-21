@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.text.format.DateFormat
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -35,17 +37,21 @@ internal fun LaunchpadDate() {
         onDispose { context.unregisterReceiver(receiver) }
     }
     val use24Hours = DateFormat.is24HourFormat(context)
-    val label = remember(now, locale, use24Hours) { launchpadDateLabel(now, locale, use24Hours) }
-    Text(label, Modifier.testTag("launchpad-date"), style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val (time, date) = remember(now, locale, use24Hours) { launchpadTimeAndDate(now, locale, use24Hours) }
+    Column {
+        Text(time, Modifier.testTag("launchpad-time"), style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Medium)
+        Text(date, Modifier.testTag("launchpad-date"), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
-internal fun launchpadDateLabel(now: ZonedDateTime, locale: Locale, use24Hours: Boolean): String {
+internal fun launchpadTimeAndDate(now: ZonedDateTime, locale: Locale, use24Hours: Boolean): Pair<String, String> {
     val english = locale.language == "en"
     val datePattern = if (english) "EEE, d MMM yyyy" else DateFormat.getBestDateTimePattern(locale, "yMMMEEEd")
     val timePattern = if (english && !use24Hours) "h:mma"
         else DateFormat.getBestDateTimePattern(locale, if (use24Hours) "Hm" else "hma")
     val date = now.format(DateTimeFormatter.ofPattern(datePattern, locale))
     val time = now.format(DateTimeFormatter.ofPattern(timePattern, locale))
-    return "${if (english) time.lowercase(locale) else time} - $date"
+    return (if (english) time.lowercase(locale) else time) to date
 }

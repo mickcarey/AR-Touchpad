@@ -37,7 +37,7 @@ Use your Android phone as a trackpad and app launcher for an external monitor or
 
 ### Launchpad
 
-Tap four fingers to open Launchpad. The date beneath the title follows the phone’s time zone and 12/24-hour preference. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
+Tap four fingers to open Launchpad. The header shows local time in the phone’s 12/24-hour format, with the day and date underneath. Choose **Add App**, search installed apps, select one or more, and confirm to pin them. Right-click or long-press a pinned app, choose **Remove shortcut**, then confirm. The app stays installed on your device. A pin opens on the selected external display, or on the phone when disconnected.
 
 Under **Personalise**, choose from ten palettes and four text sizes. AR Touchpad starts with **Vanilla8** at **125%** of the system text size. Enable **Now playing** to show the active player’s title and artist or subtitle in a full-width strip below the header.
 
