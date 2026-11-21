@@ -17,6 +17,7 @@ class InputProbeActivity : Activity() {
     companion object {
         val samples = CopyOnWriteArrayList<Sample>()
         val keys = CopyOnWriteArrayList<Pair<Int, Int>>()
+        @Volatile var activeDisplayId: Int? = null
         @Volatile var resumed = false
         @Volatile var focused = false
         @Volatile var pauseCount = 0
@@ -40,7 +41,7 @@ class InputProbeActivity : Activity() {
             event.getAxisValue(MotionEvent.AXIS_VSCROLL))
         return true
     }
-    override fun onResume() { super.onResume(); resumed = true }
+    override fun onResume() { super.onResume(); activeDisplayId = display?.displayId; resumed = true }
     override fun onPause() { resumed = false; pauseCount++; super.onPause() }
     override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); focused = hasFocus }
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {

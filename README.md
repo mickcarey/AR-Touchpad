@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme-banner.svg" alt="AR Touchpad — Small screen. Big possibilities. Your phone becomes the trackpad for your glasses or desktop display." width="100%">
+  <img src="docs/readme-banner.svg" alt="AR Touchpad. Small screen. Big possibilities. The app icon shows a reclining glasses wearer using a phone as a trackpad." width="100%">
 </p>
 
 <p align="center">
@@ -11,15 +11,15 @@
 
 # AR Touchpad ✨
 
-Turn your Android phone into a fullscreen trackpad for AR glasses or an external desktop display. Point, scroll, type, and settle in for a film with the phone tucked away in Pocket mode.
+Use your Android phone as a trackpad for an external monitor or display glasses. Tap the phone with four fingers to bring up Launchpad on the connected screen. From there you can open a pinned app, see what’s playing, or adjust the volume. When you settle in for a film, hold four fingers to lock the touchpad and slip the phone into your pocket.
 
-**👓 Works with XREAL One Pro.** This fork is developed and tested primarily with **XREAL One Pro glasses connected to a Pixel 9**—the everyday setup behind these features and fixes.
+**Tested on a desk and with glasses.** This fork has been used with a 27-inch monitor and with XREAL One Pro glasses connected to a Pixel 9. Your phone needs to support desktop or extended-display mode.
 
 **Built on [AR Touchpad by Paul Gratz](https://github.com/pgratz1/AR-Touchpad).** The original project supplies the foundation: a real Android system cursor, a Shizuku-powered virtual mouse, and touchpad gestures for an extended display. This [fork by mickcarey](https://github.com/mickcarey/AR-Touchpad) builds on that work with fullscreen controls, Pocket mode, external settings, orientation calibration, and reliability improvements. Thank you, Paul! 💛
 
 **Made for my flow. Ready for yours. 🍴** This fork is personalised to how I use my phone and glasses, from the gestures to the layout and defaults. Have different preferences? Feel free to [fork it](https://github.com/mickcarey/AR-Touchpad/fork), tweak it, and make it fit your own workflow!
 
-[What's new](#-what-this-fork-adds) · [Gestures](#-the-gesture-cheat-sheet) · [Fixes](#-smoother-more-reliable) · [Setup](#-get-going) · [Build](#-build-and-check)
+[Setup](#-get-going) · [Launchpad](#launchpad) · [Gestures](#-the-gesture-cheat-sheet) · [What's new](#-what-this-fork-adds) · [Fixes](#-smoother-more-reliable) · [Build](#-build-and-check)
 
 ## 🌈 What this fork adds
 
@@ -27,13 +27,37 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 | --- | --- |
 | 🖤 **Fullscreen & black touchpad** | A phone-sized touch surface with hidden system bars. Choose pure black for a screen that looks off while staying awake. Swipe up from the bottom edge to open the app switcher. |
 | 🔒 **Pocket mode** | Keep watching while walking or exercising, without pocket bumps clicking or scrolling. Blocks trackpad input and hides the cursor; four-finger settings and unlock gestures still work. |
-| 🖥️ **Settings in your glasses** | Open settings on the external display and keep using the phone as the trackpad. A non-dimming overlay keeps the external app visible and playing underneath. Responsive layout, teal-and-amber accents, and changes that save immediately. |
+| 🖥️ **Launchpad** | See the local date and time, open pinned apps, and reach Settings without leaving the external display. |
 | 🧭 **Any-angle calibration** | Hold the phone comfortably, make six alternating up/down strokes, and save the measured angle. Cursor movement and scrolling follow it. Prefer a preset? Choose 0°, ±45°, or ±90°. |
-| ✋ **Four-finger shortcuts** | Tap four fingers together to open or close settings; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
+| ✋ **Four-finger shortcuts** | Tap four fingers together to open or close Launchpad; hold for 0.8 seconds to toggle Pocket mode. A fading lock/unlock badge confirms the change, with optional haptics. |
 | 🎨 **Drag-ready feedback** | After a configurable hold (600 ms by default), the cursor briefly grows and changes colour. The colour stays for the whole hold/drag, then restores immediately on release or cancellation. Arrow, text-selection, and other native shapes stay correct. |
 | ⌨️ **Keyboard where you want it** | Keep the popup keyboard on the external display, or choose **Phone** to type there. Pocket mode suppresses the phone keyboard until you unlock. |
 | 🔌 **Connect in either order** | Open the app before or after plugging in the glasses. The mouse connects when the display appears and reconnects after an unplug/replug. |
 | 🌙 **Moonlight shortcut** | Three-finger tap sends Moonlight's mouse-capture toggle, so you can return control to Android without closing the stream. |
+
+### Launchpad
+
+![Launchpad with example app shortcuts and VLC playing “Please Refrigerate The Number Seven” by I Think It's In C Minor.](docs/assets/launchpad.png)
+
+The clock follows your phone’s timezone and 12/24-hour setting. Below it, your shortcuts sit in a centred grid with up to eight tiles per row, including the dashed **Add App** circle.
+
+- **Pin apps.** Choose **Add App** and type to filter the installed apps. Select as many as you want, then confirm at the bottom of the picker. A green tick marks each selection. Already-pinned apps are greyed out. When the on-screen keyboard opens on the same display, the launcher sits above it.
+- **Open or remove a shortcut.** Select a pinned app to open it on the chosen display, or on the phone when disconnected. To unpin it, right-click or long-press its icon and confirm **Remove shortcut**. The app stays installed on your phone.
+- **Find Settings.** Select the cog beside **Information**. Choose **Home** to return to your apps, or tap outside Launchpad to dismiss it. In **Personalise**, choose from ten colour schemes and four text sizes for both screens. The defaults are **Vanilla8** and **125%** of the system text size.
+
+#### Now playing
+
+Turn on **Settings → Personalise → Now playing** to see the player’s icon, title, and artist or subtitle beneath the playback controls. Select the title to return to the app or browser. Spotify can supply album art, and Jellyfin can supply cover art. If Jellyfin shows only an episode title, choose **Jellyfin notification access** and grant access on the phone so Launchpad can also use the series name, episode number, or movie year when available.
+
+#### Check how much sound reaches the bedside
+
+Under **Settings → Personalise**, enable **Room sound meter** and grant microphone access. Place the phone near the listener with the microphone uncovered. While the room is quiet, choose **Set quiet reference**, then start playback. The change in dB shows how far the microphone signal rises above that baseline. The external display badge keeps the live level and three-second peak visible after you close Launchpad, alongside the lock symbol when Pocket mode is active.
+
+The meter reads the phone microphone in **dBFS**. Absolute room loudness in dB SPL requires acoustic calibration. Audio is processed in memory, and the quiet reference lasts for the current microphone session.
+
+### Debug updates for UAT
+
+After the Pixel_9 emulator checks pass, deploy the tested APK using `scripts/install-wireless.ps1 -Serial <phone-transport> -Variant debug -SkipBuild -UatReady`. The installer preserves app data and opens AR Touchpad Debug on the phone. A twelve-second **Debug ready for UAT** notice appears on the external display. If the monitor is disconnected, the notice waits until it is available while Debug is open.
 
 ### Profiles and input preferences
 
@@ -50,9 +74,9 @@ Turn your Android phone into a fullscreen trackpad for AR glasses or an external
 
 Enable **Pocket mode** in the **Phone & keyboard** section, or hold four fingers still for **0.8 seconds**. Pair it with **Black touchpad** for a dark phone surface while your external display stays awake.
 
-Need to change something? Tap four fingers to open settings in the glasses. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
+Need to change something? Tap four fingers to open Launchpad on the external display. The cursor becomes available immediately while settings are open. Tap four fingers again to close settings and input locks again, unless you turned Pocket mode off. Hold four fingers again to unlock directly.
 
-The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running without a dark backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
+The phone stays awake in Pocket mode. Swipe up from the bottom edge to open the phone's app switcher, even while cursor input is locked. Settings use a non-focusable overlay so the external app keeps running with a lightly dimmed backdrop. Shizuku enables overlay access for this build. Settings fall back to the phone when the external display, mouse or overlay access is unavailable.
 
 ### Calibration that fits your grip
 
@@ -72,11 +96,11 @@ Settings displays the actual **Calibrated** angle instead of labelling it as a n
 | Move two fingers | Scroll |
 | Pinch / spread | Zoom out / in |
 | Three-finger tap | Configurable: Moonlight capture (default), play/pause, precision, settings, or disabled |
-| Four-finger tap together | Open / close settings; also works in Pocket mode |
+| Four-finger tap together | Open / close Launchpad; also works in Pocket mode |
 | Four-finger hold for 0.8 seconds | Toggle Pocket mode |
 | Swipe up from the phone's bottom navigation edge | Open the phone's app switcher |
 
-**Settings access.** Tap four fingers to open or close settings. Android Back also closes settings on the phone. When disconnected, use the visible Settings button.
+**Settings access.** Tap four fingers to open or close Launchpad. Android Back also closes settings on the phone. When disconnected, use the visible Launchpad button.
 
 **Haptics are optional.** When system touch haptics are enabled, one pulse confirms locking and two confirm unlocking. Visual feedback also works with haptics off. The drag size pulse grows from your current native cursor size, up to Android's maximum; leave some room below maximum to see it.
 
@@ -116,7 +140,7 @@ The main development and testing setup for this fork is **Pixel 9 + XREAL One Pr
 2. Build and install AR Touchpad using the commands below.
 3. Open the app and grant its Shizuku request. Use **Retry connection** if the mouse does not connect automatically.
 4. Connect your glasses or display and select **Desktop / Extended** mode. You can connect before opening the app, too.
-5. Tap four fingers to open settings and make yourself comfortable. ✨
+5. Tap four fingers to open Launchpad. Choose **Add App** to pin your first shortcut, or open the cog to adjust the text size and pointer speed.
 
 ## 🔧 Build and check
 
@@ -153,7 +177,7 @@ Prod and Debug install side by side. Debug also includes x86_64 support for devi
 
 Settings, Shizuku permissions and virtual-mouse identities are separate. Backgrounding an app releases its virtual mouse and restores its keyboard policy. Kotlin packages, AIDL, JNI bindings and the Android namespace all use `au.com.michaelcarey.artouchpad`, with variant-specific application IDs and provider authorities.
 
-Debug shows a **Debug** badge beside the Settings title. When both builds are installed, tap the two-arrow icon beside **Information** to open the other build on the phone with its own saved settings. The icon works from the phone or glasses. Switching in both directions requires updating both builds.
+Debug shows **Debug Build Version** and the app’s major.minor.patch version in the masthead. Android uses a separate integer version code to order updates. When both builds are installed, tap the two-arrow icon beside **Information** to open the other build on the phone with its own saved settings. The icon works from the phone or glasses. Switching in both directions requires updating both builds.
 
 `prod` is non-debuggable. It uses the configured release key when `KEYSTORE_PATH` is provided, otherwise the local debug key for personal installs. `release` still requires release signing credentials. Changing a signing key prevents updating an existing install; do not uninstall to work around it. This namespace cleanup keeps the fork's existing application IDs and preference keys, so same-key updates retain its app data. The original author's app remains a separate installation; its data is not automatically migrated.
 

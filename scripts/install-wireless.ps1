@@ -13,12 +13,14 @@ param(
     [string]$Serial,
     [switch]$SkipBuild,
     [switch]$Launch,
+    [switch]$UatReady,
     [ValidateSet('prod', 'debug', 'benchmark')]
     [string]$Variant = 'debug',
     [string]$AdbPath
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if ($UatReady -and $Variant -ne 'debug') { throw '-UatReady requires the Debug variant.' }
 
 if (-not $AdbPath) {
     $adbCommand = Get-Command adb -ErrorAction SilentlyContinue
@@ -92,9 +94,11 @@ try {
     if (($result -join ' ') -notmatch '\bSuccess\b') {
         throw 'Install did not report success. Existing app data has not been removed.'
     }
-    if ($Launch) {
+    if ($Launch -or $UatReady) {
         $packageId = 'au.com.michaelcarey.artouchpad' + $(if ($Variant -eq 'prod') { '' } else { ".$Variant" })
-        $result = Invoke-AdbChecked @('-s', $Serial, 'shell', 'am', 'start', '--display', '0', '-n', "$packageId/au.com.michaelcarey.artouchpad.MainActivity")
+        $launchArgs = @('-s', $Serial, 'shell', 'am', 'start', '--display', '0', '-n', "$packageId/au.com.michaelcarey.artouchpad.MainActivity")
+        if ($UatReady) { $launchArgs += @('--activity-single-top', '--ez', 'uat_ready', 'true') }
+        $result = Invoke-AdbChecked $launchArgs
         Write-Host ($result -join [Environment]::NewLine)
         if (($result -join ' ') -match 'Error:|Exception') { throw 'App launch failed.' }
     }

@@ -34,6 +34,7 @@ internal fun calibratedRotationLabel(degrees: Float): String {
 
 @Composable
 internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) -> Unit) {
+    val colors = MaterialTheme.colorScheme
     val minimumTravel = with(LocalDensity.current) { 80.dp.toPx() }
     val reversalTravel = with(LocalDensity.current) { 16.dp.toPx() }
     var calibration by remember { mutableStateOf(OrientationCalibration(minimumTravel)) }
@@ -43,7 +44,7 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
     var preview by remember { mutableStateOf(Offset.Zero) }
     var trail by remember { mutableStateOf(emptyList<OrientationCalibration.Point>()) }
     BackHandler(onBack = onCancel)
-    Surface(Modifier.fillMaxSize(), color = Color(0xFF081211), contentColor = Color(0xFFF4F0E6)) {
+    Surface(Modifier.fillMaxSize(), color = colors.background, contentColor = colors.onSurface) {
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -53,7 +54,7 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
             Text(if (result != null) calibratedRotationLabel(result!!) else
                 "Swipe ${if (count % 2 == 0) "up" else "down"} · ${count + 1} of ${OrientationCalibration.STROKES}",
                 style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF1B3333), RoundedCornerShape(24.dp))
+            Box(Modifier.weight(1f).fillMaxWidth().background(colors.surfaceContainerHigh, RoundedCornerShape(24.dp))
                 .pointerInput(calibration) {
                     fun updateProgress(rejection: OrientationCalibration.Rejection?) {
                         hint = when (rejection) {
@@ -108,14 +109,14 @@ internal fun OrientationCalibrationScreen(onCancel: () -> Unit, onSave: (Float) 
                 }, contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
                     if (result != null) {
-                        drawCircle(Color(0xFFE6AF52), 9.dp.toPx(), center + preview)
+                        drawCircle(colors.primary, 9.dp.toPx(), center + preview)
                         drawCircle(Color.White, 3.dp.toPx(), center + preview)
                     } else for (i in 1 until trail.size) {
                         val a = trail[i - 1]; val b = trail[i]
-                        drawLine(Color(0xFFE6AF52), Offset(a.x, a.y), Offset(b.x, b.y), strokeWidth = 3.dp.toPx())
+                        drawLine(colors.primary, Offset(a.x, a.y), Offset(b.x, b.y), strokeWidth = 3.dp.toPx())
                     }
                 }
-                Text(if (result != null) "Swipe to test direction" else "Swipe here", color = Color(0xFFC2CCBF))
+                Text(if (result != null) "Swipe to test direction" else "Swipe here", color = colors.onSurfaceVariant)
             }
             Text(hint ?: if (result == null) "$count / ${OrientationCalibration.STROKES} swipes" else "Test the dot before saving. Up should move it up; right should move it right.",
                 textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)

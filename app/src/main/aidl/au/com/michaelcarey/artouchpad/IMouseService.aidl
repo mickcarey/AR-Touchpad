@@ -97,6 +97,9 @@ interface IMouseService {
     boolean enableSettingsOverlay() = 23;
     oneway void setNotificationShadeBlocked(boolean blocked) = 24;
     oneway void showPhoneOverview() = 25;
+    oneway void hideTransientPhoneBars() = 26;
+
+    Bitmap getMediaArtwork(String expectedKey) = 27;
 
     // Closes the uinput file descriptor and marks the device not ready.
     void destroy() = 16777114;

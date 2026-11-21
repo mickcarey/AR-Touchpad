@@ -10,7 +10,6 @@ import au.com.michaelcarey.artouchpad.*
 @Composable
 internal fun ExtraSettings(viewModel: TouchpadViewModel, state: TouchpadState) {
     var saved by remember { mutableStateOf(false) }
-    var confirmReset by remember { mutableStateOf(false) }
     SettingsSection("Profiles", "Load a preset or save your current preferences for later.") {
         SettingsChoice("Profile", state.selectedProfile.label,
             "Profiles include pointer, gesture, keyboard and black-touchpad preferences. Pocket lock and calibration stay as they are.",
@@ -43,6 +42,11 @@ internal fun ExtraSettings(viewModel: TouchpadViewModel, state: TouchpadState) {
             viewModel.updateInputSettings { it.copy(threeFingerAction = value) }
         }
     }
+}
+
+@Composable
+internal fun RecoverySettings(viewModel: TouchpadViewModel, state: TouchpadState) {
+    var confirmReset by remember { mutableStateOf(false) }
     SettingsSection("Display & recovery") {
         val external = state.allDisplays.filter { it.id != 0 }
         val preferred = external.firstOrNull { it.uniqueId == state.preferredDisplay }
@@ -54,10 +58,10 @@ internal fun ExtraSettings(viewModel: TouchpadViewModel, state: TouchpadState) {
         OutlinedButton(onClick = viewModel::retryConnection) { Text("Retry connection") }
         HorizontalDivider()
         if (confirmReset) {
-            SupportingText("Reset preferences, saved profiles, display choice and calibration? This also unlocks Pocket mode.")
+            SupportingText("Reset preferences, pins, saved profiles, display choice and calibration? This also unlocks Pocket mode.")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
-                Button(onClick = { viewModel.resetDefaults(); confirmReset = false; saved = false }) { Text("Reset all settings") }
+                Button(onClick = { viewModel.resetDefaults(); confirmReset = false }) { Text("Reset all settings") }
             }
         } else TextButton(onClick = { confirmReset = true }) { Text("Reset defaults…") }
     }

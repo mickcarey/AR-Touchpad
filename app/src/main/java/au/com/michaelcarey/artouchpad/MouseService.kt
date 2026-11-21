@@ -68,6 +68,10 @@ class MouseService(private val context: android.content.Context) : IMouseService
             .getOrElse { android.os.Bundle() }
     }
 
+    override fun getMediaArtwork(expectedKey: String): android.graphics.Bitmap? = asShell {
+        runCatching { mediaControls.artwork(expectedKey) }.getOrNull()
+    }
+
     override fun sendMediaControl(keycode: Int): Boolean = asShell {
         if (pointerHidden || readyTarget == null) false
         else runCatching { mediaControls.send(keycode) }
@@ -242,6 +246,17 @@ class MouseService(private val context: android.content.Context) : IMouseService
             iwmInstance?.javaClass?.getMethod("setDisplayImePolicy",
                 Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
         }.getOrNull()
+    }
+
+    // Same per-display dismissal used by SystemUI's auto-hide timer. A hidden
+    // app window cannot itself dismiss a transient bar owned by the system.
+    private val iwmHideTransientBars by lazy {
+        runCatching { iwmInstance?.javaClass?.getMethod("hideTransientBars", Int::class.javaPrimitiveType) }.getOrNull()
+    }
+
+    override fun hideTransientPhoneBars() = asShell {
+        runCatching { iwmHideTransientBars?.invoke(iwmInstance, android.view.Display.DEFAULT_DISPLAY) }
+        Unit
     }
 
     // Create the mouse only after an external display exists. A mouse registered

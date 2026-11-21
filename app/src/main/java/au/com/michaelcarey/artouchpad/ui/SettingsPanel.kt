@@ -1,9 +1,10 @@
 package au.com.michaelcarey.artouchpad.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.platform.testTag
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.*
@@ -13,16 +14,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import au.com.michaelcarey.artouchpad.BuildConfig
+import androidx.compose.ui.text.style.TextAlign
 import au.com.michaelcarey.artouchpad.AxisRotation
 import au.com.michaelcarey.artouchpad.DIM_DELAY_CHOICES_SEC
 import au.com.michaelcarey.artouchpad.DisplayInfo
@@ -32,26 +35,11 @@ import au.com.michaelcarey.artouchpad.MediaState
 import au.com.michaelcarey.artouchpad.TouchpadBuild
 import androidx.compose.ui.window.PopupProperties
 
+internal val LocalLaunchpadGutter = staticCompositionLocalOf { 16.dp }
 private val LocalNonFocusableSettings = staticCompositionLocalOf { false }
 
-// Vanilla8's published brandColors at https://vanilla8.com/: ink #081211,
-// teal #014D67 / #154462, amber #E6AF52, orange #E45F02 and olive #55732B.
-// Adapted to dark settings surfaces with lighter text for contrast.
-private val SettingsColors = darkColorScheme(
-    primary = Color(0xFFE6AF52), onPrimary = Color(0xFF081211),
-    primaryContainer = Color(0xFF154462), onPrimaryContainer = Color(0xFFF4F0E6),
-    secondary = Color(0xFFE69402), onSecondary = Color(0xFF081211),
-    secondaryContainer = Color(0xFF014D67), onSecondaryContainer = Color(0xFFF4F0E6),
-    tertiary = Color(0xFFE45F02), onTertiary = Color(0xFF081211),
-    tertiaryContainer = Color(0xFF55732B), onTertiaryContainer = Color(0xFFFFF5DF),
-    background = Color(0xFF081211), surface = Color(0xFF081211),
-    surfaceContainer = Color(0xFF142624), surfaceContainerHigh = Color(0xFF1B3333),
-    surfaceVariant = Color(0xFF2E4545), onSurface = Color(0xFFF4F0E6),
-    onSurfaceVariant = Color(0xFFC2CCBF), outline = Color(0xFF82918A),
-    outlineVariant = Color(0xFF36504C), surfaceTint = Color(0xFFE6AF52),
-)
-
 /** Same controls on both displays; wide windows use two columns, phones use one. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SettingsPanel(
     sensitivity: Float,
@@ -86,16 +74,51 @@ internal fun SettingsPanel(
     nonFocusable: Boolean = false,
     availableBuild: TouchpadBuild? = null,
     onSwitchBuild: (TouchpadBuild) -> Unit = {},
+    showTitle: Boolean = false,
+    indicators: @Composable () -> Unit = {},
+    apps: @Composable (() -> Unit, (ShortcutRemoval) -> Unit) -> Unit = { _, _ -> },
+    onRemoveShortcuts: (Set<String>) -> Unit = {},
+    appPicker: @Composable (() -> Unit) -> Unit = {},
+    appearance: @Composable () -> Unit = {},
+    recovery: @Composable () -> Unit = {},
+    onOpenPlayer: (MediaState) -> Unit = {},
+    loadArtwork: suspend (String) -> android.graphics.Bitmap? = { null },
+    onOutsideHandler: (((() -> Unit)?) -> Unit)? = null,
 ) {
+    var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("Personalise") }
+    var pickingApps by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var settings by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var removal by remember { mutableStateOf<ShortcutRemoval?>(null) }
     var showInfo by remember { mutableStateOf(false) }
     val dismiss by rememberUpdatedState(onDismiss)
     val density = LocalDensity.current.density
-    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo, onBack = onDismiss)
-    CompositionLocalProvider(LocalNonFocusableSettings provides nonFocusable) {
-    MaterialTheme(colorScheme = SettingsColors) {
+    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(enabled = !showInfo) {
+        when {
+            removal != null -> removal = null
+            settings -> settings = false
+            pickingApps -> pickingApps = false
+            else -> onDismiss()
+        }
+    }
+    val closeTopLayer = {
+        when {
+            showInfo -> showInfo = false
+            removal != null -> removal = null
+            pickingApps -> pickingApps = false
+            else -> dismiss()
+        }
+    }
+    if (onOutsideHandler != null) {
+        val currentClose by rememberUpdatedState(closeTopLayer)
+        DisposableEffect(onOutsideHandler) {
+            onOutsideHandler { currentClose() }
+            onDispose { onOutsideHandler(null) }
+        }
+    }
+    LaunchpadFrame(nonFocusable, closeTopLayer) {
         // Phone-side fallback replaces the touchpad, so it must also recognise the closing chord.
         // Observe before child controls and only consume once four fingers claim the gesture.
-        Box(Modifier.fillMaxSize().pointerInput(density) {
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).pointerInput(density) {
             val gesture = FourFingerGesture(16f * density)
             awaitPointerEventScope {
                 while (true) {
@@ -108,19 +131,48 @@ internal fun SettingsPanel(
                 }
             }
         }) {
-            Surface(Modifier.fillMaxSize().then(if (showInfo) Modifier.clearAndSetSemantics {} else Modifier),
-                shape = RoundedCornerShape(28.dp)) {
+            Surface(Modifier.fillMaxSize().then(if (showInfo || pickingApps || removal != null) Modifier.clearAndSetSemantics {} else Modifier),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column {
+                    if (TouchpadBuild.current == TouchpadBuild.Debug) {
+                        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary) {
+                            Text("Debug Build Version ${BuildConfig.VERSION_NAME.removeSuffix("-debug")}",
+                                Modifier.fillMaxWidth().padding(horizontal = LocalLaunchpadGutter.current, vertical = 5.dp),
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                     SettingsHeader(mediaEnabled, onMediaKey, { showInfo = true }, mediaState,
-                        availableBuild, onSwitchBuild)
+                        availableBuild, onSwitchBuild, indicators, settings, { settings = !settings })
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (!settings) NowPlayingStrip(showTitle && mediaEnabled, mediaState, onOpenPlayer, loadArtwork)
+                    if (settings) {
+                        PanelTabs(listOf("Personalise", "Controls", "Connection"), section) { section = it }
+                    }
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                         val wide = maxWidth >= 800.dp
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        if (!settings) {
+                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                .padding(horizontal = LocalLaunchpadGutter.current, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
+                                Box(Modifier.fillMaxWidth().testTag("apps-pane")) {
+                                    apps({ pickingApps = true }, { removal = it })
+                                }
+                                appControls()
+                            }
+                            return@BoxWithConstraints
+                        }
+                        Column(Modifier.fillMaxSize().verticalScroll(key(section) { rememberScrollState() }).padding(if (wide) 24.dp else 16.dp),
                             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                            appControls()
+                            when (section) {
+                                "Personalise" -> { appearance(); return@Column }
+                                "Connection" -> { appControls(); recovery(); return@Column }
+                            }
                             val pointer: @Composable () -> Unit = {
-                                SettingsSection("Pointer", "Movement and scrolling", accent = Color(0xFFE45F02)) {
+                                SettingsSection("Pointer", "Movement and scrolling", accent = MaterialTheme.colorScheme.secondary) {
                                     SpeedSetting("Cursor speed", sensitivity, 0.2f..3f, onSensitivity, onSpeedFinished)
                                     SpeedSetting("Scroll speed", scrollSpeed, 0.1f..2f, onScrollSpeed, onSpeedFinished)
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -147,14 +199,14 @@ internal fun SettingsPanel(
                             val display: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                     SettingsSection("Phone & keyboard", "Keep the touchpad comfortable to use") {
-                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes settings.", pocketMode, onPocketMode)
+                                        ToggleSetting("Pocket mode", "Four-finger hold locks/unlocks. Four-finger tap opens/closes Launchpad.", pocketMode, onPocketMode)
                                         ToggleSetting("Black touchpad", "Keep the phone completely black while using the pad.", blackTouchpad, onBlackTouchpad)
                                         if (!blackTouchpad) SettingsChoice("Dim phone after", dimDelayLabel(dimDelaySec),
                                             "Only dims the phone. External display stays bright.",
                                             DIM_DELAY_CHOICES_SEC.map { it to dimDelayLabel(it) }, onDimDelay)
                                         else SupportingText(if (pocketMode)
-                                            "The pad stays black. Settings and unlock gestures stay active."
-                                        else "Touch stays active. Four-finger tap opens/closes settings on your external display.")
+                                            "The pad stays black. Launchpad and unlock gestures stay active."
+                                        else "Touch stays active. Four-finger tap opens/closes Launchpad on your external display.")
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Text("Popup keyboard", style = MaterialTheme.typography.titleSmall)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,9 +237,49 @@ internal fun SettingsPanel(
                     }
                 }
             }
+            removal?.let { pending ->
+                ConfirmShortcutRemoval(pending, onCancel = { removal = null }, onConfirm = {
+                    onRemoveShortcuts(pending.ids)
+                    removal = null
+                })
+            }
+            if (pickingApps) appPicker { pickingApps = false }
             if (showInfo) SettingsInfoDialog(allDisplays, targetDisplay) { showInfo = false }
         }
     }
+}
+
+@Composable
+private fun LaunchpadFrame(external: Boolean, onOutsideTap: () -> Unit, content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
+        val dismiss by rememberUpdatedState(onOutsideTap)
+        Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { dismiss() } })
+        val panel = if (external) Modifier.size(minOf(1120.dp, maxWidth * 0.92f), minOf(780.dp, maxHeight * 0.9f))
+            else Modifier.fillMaxSize().padding(12.dp)
+        BoxWithConstraints(panel.testTag("launcher-panel")) {
+            val gutter = if (maxWidth >= 800.dp) 24.dp else 16.dp
+            CompositionLocalProvider(LocalNonFocusableSettings provides external, LocalLaunchpadGutter provides gutter, content = content)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PanelTabs(tabs: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pill = RoundedCornerShape(50)
+    FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 14.dp, bottom = 4.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        tabs.forEach { title ->
+            val active = title == selected
+            Box(Modifier.clip(pill).background(if (active) colors.primary.copy(alpha = 0.16f) else colors.surfaceContainer)
+                .selectable(selected = active, role = Role.Tab, onClick = { onSelect(title) })
+                .heightIn(min = 48.dp).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                Text(title, style = MaterialTheme.typography.titleSmall,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -197,7 +289,7 @@ internal fun SupportingText(text: String) {
 }
 
 @Composable
-internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = Color(0xFFE6AF52),
+internal fun SettingsSection(title: String, subtitle: String? = null, accent: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -272,74 +364,4 @@ private fun dimDelayLabel(sec: Int): String = when {
     sec < 60 -> "$sec seconds"
     sec == 60 -> "1 minute"
     else -> "${sec / 60} minutes"
-}
-
-@Composable
-private fun SettingsInfoDialog(allDisplays: List<DisplayInfo>, targetDisplay: DisplayInfo?, onDismiss: () -> Unit) {
-    if (LocalOnBackPressedDispatcherOwner.current != null) BackHandler(onBack = onDismiss)
-    // Compose Dialog creates TYPE_APPLICATION windows, incompatible with a Presentation's
-    // window context. Keep this modal inside the existing external settings window.
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f))
-        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
-        contentAlignment = Alignment.Center) {
-        Surface(Modifier.widthIn(max = 720.dp).fillMaxWidth(0.92f).heightIn(max = maxHeight * 0.94f)
-            .semantics { paneTitle = "Information" }
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
-            shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
-            Column {
-                Row(Modifier.fillMaxWidth().padding(24.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Information", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(onClick = onDismiss) { Text("Close") }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    SettingsSection("Gesture guide", accent = Color(0xFFE45F02)) {
-                        listOf(
-                            "One-finger drag" to "Move cursor",
-                            "One-finger tap / double-tap" to "Click / double-click",
-                            "One-finger long-press" to "Right-click",
-                            "Long-press, then drag" to "Drag / select text",
-                            "Two-finger tap" to "Right-click",
-                            "Two-finger drag" to "Scroll",
-                            "Two-finger pinch" to "Zoom page",
-                            "Three-finger tap" to "Your chosen shortcut",
-                            "Four-finger tap" to "Open / close settings",
-                            "Four-finger hold · 0.8 seconds" to "Lock / unlock Pocket mode",
-                        ).forEach { (gesture, action) ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                                Text(gesture, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                Text(action, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SupportingText("Four-finger gestures work while locked. Settings open on the external display when connected. With haptics enabled: one pulse locks, two unlock.")
-                    }
-                    SettingsSection("Displays", accent = Color(0xFF55732B)) {
-                        if (allDisplays.isEmpty()) SupportingText("No displays detected.")
-                        allDisplays.forEachIndexed { i, d ->
-                            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(d.name, style = MaterialTheme.typography.titleSmall)
-                                    SupportingText("${d.width} × ${d.height}")
-                                }
-                                if (d.id == targetDisplay?.id) Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(8.dp)) {
-                                    Text("Active", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                        if (targetDisplay == null) SupportingText("Connect your glasses in Desktop / Extended mode.")
-                    }
-                    SupportingText("A fork of the original AR Touchpad project.")
-                }
-            }
-        }
-    }
 }

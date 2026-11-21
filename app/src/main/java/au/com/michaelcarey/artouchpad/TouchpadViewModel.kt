@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +50,7 @@ const val DEFAULT_DIM_DELAY_SEC = 30
 data class DisplayInfo(val id: Int, val name: String, val width: Int, val height: Int, val uniqueId: String = name)
 
 data class TouchpadState(
+    val launchpad: LaunchpadPreferences = LaunchpadPreferences(),
     val media: MediaState = MediaState(),
     val smoothing: Smoothing = Smoothing.LIGHT,
     val precision: Boolean = false,
@@ -100,9 +102,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("touchpad_prefs", Context.MODE_PRIVATE)
 
+    internal val quietReference = MutableStateFlow<Int?>(null)
+    internal val roomLevel = MutableStateFlow(RoomLevel())
     private val settingsStore = InputSettingsStore(prefs)
 
     private val _state = MutableStateFlow(TouchpadState(
+        launchpad = LaunchpadPreferences.load(prefs),
         preferredDisplay = prefs.getString("preferred_display", null),
         selectedProfile = runCatching { UsageProfile.valueOf(prefs.getString("selected_profile", "DESKTOP")!!) }
             .getOrDefault(UsageProfile.DESKTOP),
@@ -113,6 +118,23 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         pocketMode = prefs.getBoolean("pocket_mode", false),
     ).withInputSettings(settingsStore.load()))
     val state: StateFlow<TouchpadState> = _state.asStateFlow()
+    internal val launcher = AppLauncher(InstalledApps)
+    private val _catalog = MutableStateFlow(LauncherCatalog())
+    internal val catalog = _catalog.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            catalogChanges(app).collectLatest {
+                if (!_catalog.value.complete && state.value.launchpad.pinned.isNotEmpty()) {
+                    val pins = withContext(Dispatchers.IO) { launcher.catalog(app, state.value.launchpad.pinned) }
+                    _catalog.value = LauncherCatalog(pins)
+                }
+                val apps = withContext(Dispatchers.IO) { launcher.catalog(app) }
+                _catalog.value = LauncherCatalog(apps, complete = true)
+            }
+        }
+    }
+
     // Transient feedback only: restoring a saved mode must not replay a notification.
     private val _pocketModeChanges = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val pocketModeChanges = _pocketModeChanges.asSharedFlow()
@@ -443,6 +465,12 @@ class TouchpadViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(selectedProfile = profile) }
     }
     fun saveProfile(profile: UsageProfile) = settingsStore.save(_state.value.inputSettings(), profile)
+
+    fun updateLaunchpad(change: (LaunchpadPreferences) -> LaunchpadPreferences) {
+        val updated = change(_state.value.launchpad)
+        updated.save(prefs)
+        _state.update { it.copy(launchpad = updated) }
+    }
 
     fun resetDefaults() {
         resetTouchpadInput()

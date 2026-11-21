@@ -6,7 +6,7 @@ enum class Smoothing(val label: String, val timeConstantMs: Float) {
 
 enum class ThreeFingerAction(val label: String) {
     MOONLIGHT("Moonlight capture"), PLAY_PAUSE("Play / pause"), PRECISION("Toggle precision"),
-    SETTINGS("Open settings"), NONE("Disabled")
+    SETTINGS("Open Launchpad"), NONE("Disabled")
 }
 
 enum class UsageProfile(val label: String) { DESKTOP("Desktop"), MOONLIGHT("Moonlight"), MOVIE("Movie") }

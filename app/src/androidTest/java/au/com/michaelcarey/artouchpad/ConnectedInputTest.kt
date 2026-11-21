@@ -56,6 +56,7 @@ class ConnectedInputTest {
                 is Float -> edit.putFloat(key, value)
                 is Int -> edit.putInt(key, value)
                 is Long -> edit.putLong(key, value)
+                is Set<*> -> edit.putStringSet(key, value.filterIsInstance<String>().toSet())
             } }
             edit.commit()
         }
@@ -225,7 +226,7 @@ class ConnectedInputTest {
         }
     }
 
-    @Test fun topEdgePullsDoNotRevealThePhoneStatusBar() {
+    @Test fun topEdgePullsKeepStatusIconsHiddenAndShadeCollapsed() {
         receiveInput()
         main.onActivity {
             vm.closeSettings()
@@ -246,19 +247,45 @@ class ConnectedInputTest {
             statusHeight = decor.rootWindowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars()).top
         }
         assertTrue(statusHeight > 0)
-        fun statusBarPixels(): IntArray {
+        data class Sample(val icons: IntArray, val belowBar: IntArray)
+        val band = width / 3
+        fun sample(): Sample {
             val screen = requireNotNull(automation.takeScreenshot())
             try {
-                // Sample the clock and system icons, leaving the touch indicator out of the comparison.
-                val band = width / 3
-                return IntArray(2 * band * statusHeight).also { pixels ->
-                    screen.getPixels(pixels, 0, band, 0, 0, band, statusHeight)
-                    screen.getPixels(pixels, band * statusHeight, band, width - band, 0, band, statusHeight)
-                }
+                // Sample both icon areas, excluding the moving finger in the middle.
+                val icons = IntArray(2 * band * statusHeight)
+                screen.getPixels(icons, 0, 2 * band, 0, 0, band, statusHeight)
+                screen.getPixels(icons, band, 2 * band, width - band, 0, band, statusHeight)
+                val below = IntArray(band * statusHeight)
+                screen.getPixels(below, 0, band, 0, 2 * statusHeight, band, statusHeight)
+                return Sample(icons, below)
             } finally { screen.recycle() }
         }
         automation.waitForIdle(500, 5000)
-        val before = statusBarPixels()
+        val before = sample()
+        fun onlyBackgroundTint(pixels: IntArray): Boolean {
+            // SystemUI may tint the empty strip. Across one scanline, identical underlying
+            // grid pixels must still have the same colour. A clock or glyph breaks that mapping.
+            val colours = HashMap<Int, Int>()
+            for (i in pixels.indices) {
+                if (i % (band * 2) == 0) colours.clear()
+                val pixel = pixels[i]
+                val expected = colours.putIfAbsent(before.icons[i], pixel) ?: continue
+                for (shift in 0..16 step 8) {
+                    val channel = (pixel ushr shift) and 255
+                    if (kotlin.math.abs(channel - ((expected ushr shift) and 255)) > 3) return false
+                }
+            }
+            return true
+        }
+        // Positive control: a bright mark in the clock region must fail the icon check.
+        val visibleMark = before.icons.clone().apply { fill(android.graphics.Color.WHITE, band / 4, band / 4 + 12) }
+        assertFalse(onlyBackgroundTint(visibleMark))
+        fun assertClear(stage: String) {
+            val frame = sample()
+            assertTrue("Clock or status icons appeared $stage", onlyBackgroundTint(frame.icons))
+            assertArrayEquals("Notification shade covered the pad $stage", before.belowBar, frame.belowBar)
+        }
         repeat(2) { stroke ->
             val down = SystemClock.uptimeMillis()
             fun send(action: Int, y: Float) {
@@ -277,9 +304,9 @@ class ConnectedInputTest {
                     send(MotionEvent.ACTION_MOVE, 1f + step * 32f)
                 }
                 SystemClock.sleep(250)
-                assertTrue("Status bar appeared during top-edge drag ${stroke + 1}", before.contentEquals(statusBarPixels()))
+                assertClear("during top-edge drag ${stroke + 1}")
             } finally { send(MotionEvent.ACTION_UP, 257f) }
-            assertTrue("Status bar appeared after lifting on stroke ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            assertClear("after lifting on stroke ${stroke + 1}")
             await("Top-edge drag ${stroke + 1} did not move the external pointer") {
                 InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE }
             }
@@ -326,6 +353,126 @@ class ConnectedInputTest {
             assertEquals(!locked, vm.state.value.touchpadInputEnabled)
         }
     }
+    private fun externalStatusText(target: Int, title: String): String? {
+        var text: String? = null
+        instrumentation.runOnMainSync {
+            // Click-through windows can be absent from the accessibility interactive-window list.
+            text = android.view.inspector.WindowInspector.getGlobalWindowViews().filterIsInstance<android.widget.TextView>()
+                .firstOrNull { it.isShown && it.display?.displayId == target &&
+                    (it.layoutParams as? android.view.WindowManager.LayoutParams)?.title == title }
+                ?.contentDescription?.toString()
+        }
+        return text
+    }
+
+    @Test fun debugUatNoticeAppearsOnExternalDisplayOncePerUpdate() {
+        org.junit.Assume.assumeTrue(BuildConfig.BUILD_TYPE == "debug")
+        val notice = context.getSharedPreferences("uat_notice", Context.MODE_PRIVATE)
+        val savedNotice = notice.all.toMap()
+        try {
+            notice.edit().clear().commit()
+            val target = vm.state.value.targetDisplay!!.id
+            fun announce() = main.onActivity { activity ->
+                activity.startActivity(Intent(activity, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("uat_ready", true))
+            }
+            announce()
+            await("New Debug build was not announced on the selected monitor") {
+                externalStatusText(target, "AR Touchpad UAT notice")?.contains("Debug ready for UAT") == true
+            }
+            await("UAT notice was not acknowledged and dismissed") {
+                notice.getLong("shown", 0L) > 0L && externalStatusText(target, "AR Touchpad UAT notice") == null
+            }
+            announce()
+            instrumentation.waitForIdleSync()
+            assertEquals(0L, notice.getLong("pending", 0L))
+            assertNull(externalStatusText(target, "AR Touchpad UAT notice"))
+        } finally {
+            val editor = notice.edit().clear()
+            savedNotice.forEach { (key, value) -> if (value is Long) editor.putLong(key, value) }
+            editor.commit()
+        }
+    }
+
+    @Test fun externalStatusTracksPocketLockAndTheMicrophoneSession() {
+        org.junit.Assume.assumeTrue("Grant RECORD_AUDIO on the test emulator to exercise capture",
+            context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        receiveInput()
+        val target = vm.state.value.targetDisplay!!.id
+        fun statusText() = externalStatusText(target, "AR Touchpad display status")
+        main.onActivity { vm.closeSettings(); vm.setPocketMode(true) }
+        await("Pocket lock indicator absent") { statusText() == "Pocket locked" }
+        assertTrue(InputProbeActivity.focused)
+        main.onActivity { vm.updateLaunchpad { it.copy(roomMeter = true) }; vm.setPocketMode(false) }
+        await("Microphone did not produce a level or digital silence") {
+            vm.roomLevel.value.rms != null || vm.roomLevel.value.status == "No mic signal"
+        }
+        await("Mic status absent from external display") {
+            statusText()?.let { "dBFS" in it || it == "No mic signal" } == true
+        }
+        assertTrue(InputProbeActivity.focused)
+        main.onActivity { vm.updateLaunchpad { it.copy(roomMeter = false) } }
+        await("Status stayed visible after disabling the meter") { statusText() == null }
+    }
+
+    @Test fun registeredShortcutLaunchesOnTheSelectedDisplay() {
+        val extension = object : LauncherExtension {
+            override val namespace = "test"
+            override fun entries(context: Context) = listOf(AppShortcut("probe", "Probe",
+                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888),
+                Intent(context, InputProbeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)))
+        }
+        val launcher = AppLauncher(extension)
+        val shortcut = launcher.catalog(context).single()
+        assertEquals("test/probe", shortcut.id)
+        val target = vm.state.value.targetDisplay!!.id
+        main.onActivity { launcher.launch(it, shortcut, target) }
+        try {
+            await("Shortcut did not open on target display") {
+                InputProbeActivity.resumed && InputProbeActivity.activeDisplayId == target
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<InputProbeActivity>().forEach { it.finish() }
+            }
+        }
+    }
+
+    @Test fun playbackActivityOpensOnSelectedDisplay() {
+        val target = vm.state.value.targetDisplay!!.id
+        val intent = Intent(context, InputProbeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        val activity = android.app.PendingIntent.getActivity(context, 42, intent, android.app.PendingIntent.FLAG_IMMUTABLE)
+        try {
+            main.onActivity {
+                assertTrue(vm.launcher.openPlayer(it, MediaState(sourcePackage = context.packageName, sessionActivity = activity), target))
+            }
+            await("Playback activity did not open on the selected display") {
+                InputProbeActivity.resumed && InputProbeActivity.activeDisplayId == target
+            }
+        } finally {
+            activity.cancel()
+            instrumentation.runOnMainSync {
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<InputProbeActivity>().forEach { it.finish() }
+            }
+        }
+    }
+
+    @Test fun catalogIsReadyBeforeOpeningAndIsReusedAcrossOpens() {
+        await("App catalog did not prewarm with the launcher closed") { vm.catalog.value.complete }
+        val snapshot = vm.catalog.value.shortcuts!!
+        val pin = snapshot.first()
+        assertEquals(pin.label, vm.launcher.catalog(context, setOf(pin.id)).single().label)
+        main.onActivity { vm.openSettings() }
+        assertSame(snapshot, vm.catalog.value.shortcuts)
+        main.onActivity { vm.closeSettings(); vm.openSettings() }
+        assertSame(snapshot, vm.catalog.value.shortcuts)
+    }
+
     @Test fun settingsOverlayLeavesExternalAppResumedAndFocused() {
         receiveInput()
         await("External probe did not gain focus") { InputProbeActivity.resumed && InputProbeActivity.focused }
@@ -346,22 +493,168 @@ class ConnectedInputTest {
         main.onActivity {
             val attrs = overlay!!.window!!.attributes
             assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, attrs.type)
-            assertEquals(0, attrs.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
+            assertEquals(0, attrs.flags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, attrs.blurBehindRadius)
             assertTrue(attrs.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
-            assertEquals(0f, attrs.dimAmount, 0f)
+            assertTrue(attrs.dimAmount in 0.05f..0.22f)
             assertEquals(vm.state.value.targetDisplay!!.id, overlay!!.display.displayId)
-            // Capture the real external overlay for visual review, not the phone fallback.
-            val view = overlay!!.window!!.decorView
-            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
-            view.draw(android.graphics.Canvas(bitmap))
-            java.io.File(context.getExternalFilesDir(null), "settings-overlay.png").outputStream().use {
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-            }
-            bitmap.recycle()
-            vm.closeSettings()
+            captureOverlay(overlay!!, "settings-overlay.png")
         }
-        await("Overlay did not dismiss") { overlay?.isShowing == false }
+        InputProbeActivity.samples.clear()
+        val target = vm.state.value.targetDisplay!!.id
+        val bounds = context.createDisplayContext(overlay!!.display).resources.displayMetrics
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+            "input -d $target tap ${bounds.widthPixels / 100} ${bounds.heightPixels / 2}")).use { it.readBytes() }
+        await("Backdrop tap did not dismiss the launcher") { overlay?.isShowing == false }
         assertTrue(InputProbeActivity.focused)
+        assertFalse("Dismissal tapped the external app", InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_DOWN })
+    }
+
+    @Test fun touchpadClicksOnTheExternalSystemBarsDismissTheLauncher() {
+        receiveInput()
+        for (dy in listOf(-20000f, 20000f)) {
+            main.onActivity {
+                vm.mouse.moveMouse(-20000f, dy)
+                vm.mouse.flushMovement()
+                vm.openSettings()
+            }
+            await("External launcher did not open") {
+                var visible = false
+                main.onActivity { activity ->
+                    val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
+                    visible = (field.get(activity) as? SettingsOverlay)?.isShowing == true
+                }
+                visible
+            }
+            main.onActivity { it.clickTouchpad() }
+            await("System bar click left the launcher open") { !vm.state.value.showSettings }
+        }
+    }
+
+    private fun captureExternalPanel(filename: String) {
+        main.onActivity { activity ->
+            val field = MainActivity::class.java.getDeclaredField("settingsOverlay").apply { isAccessible = true }
+            captureOverlay(field.get(activity) as SettingsOverlay, filename)
+        }
+    }
+
+    private fun captureOverlay(overlay: SettingsOverlay, filename: String) {
+        val view = overlay.window!!.decorView
+        val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        view.draw(android.graphics.Canvas(bitmap))
+        java.io.File(context.getExternalFilesDir(null), filename).outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap.recycle()
+    }
+
+    @Test fun externalPickerAcceptsTypedSearchAndReturnsFocusOnCancel() {
+        receiveInput()
+        val target = vm.state.value.targetDisplay!!.id
+        val automation = instrumentation.uiAutomation
+        val info = automation.serviceInfo
+        val flags = info.flags
+        fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+        val previousKeyboard = shell("settings get secure show_ime_with_hard_keyboard")
+        fun find(node: AccessibilityNodeInfo?, match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            if (node == null || match(node)) return node
+            for (i in 0 until node.childCount) find(node.getChild(i), match)?.let { return it }
+            return null
+        }
+        fun node(match: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+            automation.clearCache()
+            return automation.windowsOnAllDisplays[target].orEmpty().mapNotNull { it.root }
+                .filter { it.packageName == context.packageName }.firstNotNullOfOrNull { find(it, match) }
+        }
+        fun click(match: (AccessibilityNodeInfo) -> Boolean) {
+            var action: AccessibilityNodeInfo? = null
+            await("External picker control unavailable") {
+                action = generateSequence(node(match)) { it.parent }.firstOrNull { it.isClickable }
+                action != null
+            }
+            assertTrue(action!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        }
+        try {
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            main.onActivity { vm.setDexKeyboard(false) }
+            info.flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            automation.serviceInfo = info
+            main.onActivity { vm.openSettings() }
+            click { it.contentDescription?.toString() == "Information" }
+            await("Information did not open") { node { it.text?.toString() == "Pointer gestures" } != null }
+            captureExternalPanel("information-overlay.png")
+            click { it.contentDescription?.toString() == "Close information" }
+            await("Closing information did not restore the launcher") { node { it.text?.toString() == "Add App" } != null }
+            val catalog = AppLauncher(InstalledApps).catalog(context)
+            val shortcut = catalog.minBy { it.label.length }
+            main.onActivity { vm.updateLaunchpad { it.copy(pinned = it.pinned + shortcut.id) } }
+            await("Pinned tile missing") { node { it.text?.toString() == shortcut.label || it.contentDescription?.toString() == shortcut.label } != null }
+            val bounds = android.graphics.Rect()
+            node { it.text?.toString() == shortcut.label || it.contentDescription?.toString() == shortcut.label }!!.getBoundsInScreen(bounds)
+            val pointer = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE }
+            val coords = MotionEvent.PointerCoords().apply { x = bounds.exactCenterX(); y = bounds.exactCenterY() }
+            val downTime = SystemClock.uptimeMillis()
+            fun sendMouse(action: Int, buttons: Int) {
+                val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, 1, arrayOf(pointer),
+                    arrayOf(coords), 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+                try {
+                    HiddenApiBypass.invoke(android.view.InputEvent::class.java, event, "setDisplayId", target)
+                    assertTrue(automation.injectInputEvent(event, true))
+                } finally { event.recycle() }
+            }
+            sendMouse(MotionEvent.ACTION_DOWN, MotionEvent.BUTTON_SECONDARY)
+            sendMouse(MotionEvent.ACTION_UP, 0)
+            click { it.text?.toString() == "Remove shortcut" }
+            await("Confirmation missing") { node { it.text?.toString()?.contains("stays installed") == true } != null }
+            click { it.text?.toString() == "Cancel" }
+            assertTrue(shortcut.id in vm.state.value.launchpad.pinned)
+            click { it.text?.toString() == "Add App" }
+            await("External app list not ready") {
+                node { it.isEditable } != null && node { it.text?.toString() == shortcut.label } != null
+            }
+            val candidate = catalog.first { it.id !in vm.state.value.launchpad.pinned }
+            click { it.text?.toString() == candidate.label }
+            await("New selection did not enable Add App") {
+                generateSequence(node { it.text?.toString() == "Add App" }) { it.parent }.any { it.isClickable && it.isEnabled }
+            }
+            captureExternalPanel("app-picker.png")
+            fun pickerBounds() = android.graphics.Rect().also { bounds ->
+                node { it.paneTitle == "Add apps" }?.getBoundsInScreen(bounds)
+            }
+            val fullPicker = pickerBounds()
+            assertFalse(fullPicker.isEmpty)
+            click { it.isEditable }
+            await("Search field did not gain focus") { node { it.isEditable && it.isFocused } != null }
+            await("Launcher did not fit above the on-screen keyboard") {
+                val keyboard = automation.windowsOnAllDisplays[target].orEmpty().firstOrNull {
+                    it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+                if (keyboard != null) {
+                    val keyboardBounds = android.graphics.Rect().also(keyboard::getBoundsInScreen)
+                    val panel = pickerBounds()
+                    !panel.isEmpty && panel.bottom < fullPicker.bottom && panel.bottom < keyboardBounds.top
+                } else {
+                    // Android may route the IME to the phone. The monitor then keeps its full picker.
+                    automation.windowsOnAllDisplays[Display.DEFAULT_DISPLAY].orEmpty().any {
+                        it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                    } && pickerBounds() == fullPicker
+                }
+            }
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                automation.executeShellCommand("input -d $target text zzznomatch")).use { it.readBytes() }
+            await("External keyboard did not filter apps") { node { it.text?.toString() == "No matching apps" } != null }
+            click { it.text?.toString() == "Cancel" }
+            await("Cancel did not restore external focus") {
+                InputProbeActivity.focused && node { it.text?.toString() == "Add App" } != null && node { it.isEditable } == null
+            }
+            assertTrue(vm.state.value.showSettings)
+        } finally {
+            if (previousKeyboard == "null") shell("settings delete secure show_ime_with_hard_keyboard")
+            else shell("settings put secure show_ime_with_hard_keyboard $previousKeyboard")
+            info.flags = flags
+            automation.serviceInfo = info
+        }
     }
 
     @Test fun switchFromGlassesSettingsLaunchesProdOnPhone() {
@@ -422,10 +715,16 @@ class ConnectedInputTest {
                 override fun onSkipToPrevious() { commands += "previous" }
             }, android.os.Handler(android.os.Looper.getMainLooper()))
             playback(android.media.session.PlaybackState.STATE_PLAYING)
+            val fullTitle = "Test film ".repeat(30).trimEnd()
+            session.setMetadata(android.media.MediaMetadata.Builder()
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, fullTitle)
+                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Test artist").build())
             session.isActive = true
             await("Test media session not selected; will not send commands to another player") {
                 service.mediaState.getString("sessionPackage") == context.packageName
             }
+            assertEquals(fullTitle, service.mediaState.getString("title"))
+            assertEquals("Test artist", service.mediaState.getString("subtitle"))
             assertEquals(1, service.mediaState.getInt("playing", -1))
             assertTrue(service.sendMediaControl(KeyEvent.KEYCODE_MEDIA_PAUSE))
             // Keep the fixture playing until routing assertions finish: a genuinely playing
