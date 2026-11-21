@@ -2,7 +2,13 @@ package au.com.michaelcarey.artouchpad.ui
 
 import android.graphics.Bitmap
 import android.view.KeyEvent
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.HoverInteraction
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import kotlinx.coroutines.flow.filterNot
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -164,10 +170,20 @@ internal fun NowPlayingStrip(enabled: Boolean, state: MediaState, onOpenPlayer: 
                         }
                     }
                 }
+                val playerAction = if (source == null) Modifier else {
+                    val playerInteractions = remember { MutableInteractionSource() }
+                    val feedback = remember(playerInteractions) {
+                        object : InteractionSource {
+                            override val interactions = playerInteractions.interactions.filterNot {
+                                it is HoverInteraction.Enter || it is HoverInteraction.Exit
+                            }
+                        }
+                    }
+                    Modifier.indication(feedback, LocalIndication.current).clickable(interactionSource = playerInteractions,
+                        indication = null, role = Role.Button, onClickLabel = "Open playback app") { onOpenPlayer(state) }
+                }
                 Column(Modifier.fillMaxWidth().padding(horizontal = if (source == null) 0.dp else size + 8.dp)
-                    .then(if (source == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = "Open playback app") {
-                        onOpenPlayer(state)
-                    }).heightIn(min = if (source == null) 0.dp else size, max = 156.dp).verticalScroll(rememberScrollState()),
+                    .then(playerAction).heightIn(min = if (source == null) 0.dp else size, max = 156.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,

@@ -126,6 +126,7 @@ class SettingsUiTest {
         assertEquals("3:21pm" to "Sat, 21 Nov 2026", label(honolulu, false))
     }
     @Test fun wideMediaHeaderStaysVisibleAndSendsPreviousNextAndMute() = verifyPinnedMedia(1000)
+    @OptIn(ExperimentalTestApi::class)
     @Test fun overviewAndSettingsAreSeparateAndTitleIsOptional() {
         val visible = androidx.compose.runtime.mutableStateOf(false)
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
@@ -140,6 +141,12 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertDoesNotExist()
         compose.onNodeWithTag("now-playing").assertDoesNotExist()
+        fun assertAppsCentred(contentTop: androidx.compose.ui.unit.Dp) {
+            val apps = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
+            val panel = compose.onNodeWithTag("launcher-panel").getUnclippedBoundsInRoot()
+            assertEquals((apps.top - contentTop).value, (panel.bottom - apps.bottom).value, 1f)
+        }
+        assertAppsCentred(compose.onNodeWithTag("settings-header").getUnclippedBoundsInRoot().bottom + 1.dp)
         compose.runOnIdle { visible.value = true }
         compose.onNodeWithText(title, useUnmergedTree = true).assertIsDisplayed().performSemanticsAction(
             androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { getLayout ->
@@ -157,13 +164,18 @@ class SettingsUiTest {
         assertEquals(header.right, strip.right)
         assertEquals((strip.left + strip.right).value / 2f, (artist.left + artist.right).value / 2f, 1f)
         assertEquals(1f, (strip.top - header.bottom).value, 0.5f)
-        assertTrue(strip.bottom <= compose.onNodeWithText("Add App").getUnclippedBoundsInRoot().top)
-        compose.onNodeWithText(title).performClick()
-        compose.runOnIdle { assertEquals(context.packageName, opened?.sourcePackage) }
+        assertAppsCentred(strip.bottom)
         val sourceLabel = context.applicationInfo.loadLabel(context.packageManager).toString()
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(sourceLabel).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(compose.onNodeWithContentDescription(sourceLabel).getUnclippedBoundsInRoot().right <=
             compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot().left)
+        val playback = compose.onNodeWithText(title)
+        val resting = playback.captureToImage().asAndroidBitmap()
+        playback.performMouseInput { enter(center) }
+        compose.mainClock.advanceTimeBy(300)
+        assertTrue("Hover changed the playback background", resting.sameAs(playback.captureToImage().asAndroidBitmap()))
+        playback.performMouseInput { click() }
+        compose.runOnIdle { assertEquals(context.packageName, opened?.sourcePackage) }
         val appsPane = compose.onNodeWithTag("apps-pane").getUnclippedBoundsInRoot()
         val logo = compose.onNodeWithContentDescription(sourceLabel).getUnclippedBoundsInRoot()
         assertEquals(appsPane.left, logo.left)
@@ -294,7 +306,7 @@ class SettingsUiTest {
         compose.onNodeWithText("Add App").assertIsNotEnabled()
     }
 
-    @Test fun pinnedRowsAreCentredAndWrapAtTenTilesOrTheAvailableWidth() {
+    @Test fun pinnedRowsAreCentredAndWrapAtEightTilesOrTheAvailableWidth() {
         val icon = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
         val apps = (1..11).map { AppShortcut("test/$it", "App $it", icon, android.content.Intent()) }
         val width = androidx.compose.runtime.mutableStateOf(1072.dp)
@@ -312,13 +324,33 @@ class SettingsUiTest {
             }
             val rows = tiles.groupBy { it.top }.values
             assertEquals(tiles.chunked(tilesPerRow).map { it.size }, rows.map { it.size })
+            rows.zipWithNext().forEach { (above, below) ->
+                assertEquals(20f, (below.first().top - above.first().bottom).value, 1f)
+            }
             for (row in rows) {
                 assertEquals((row.first().left - panel.left).value, (panel.right - row.last().right).value, 1f)
             }
         }
-        checkRows(10)
+        checkRows(8)
         compose.runOnIdle { width.value = 360.dp }
         checkRows(3)
+    }
+
+    @Test fun overflowingPinsStartAtTheTopAndScrollToTheLastRow() {
+        val icon = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        val apps = (1..60).map { AppShortcut("test/$it", "Pin $it", icon, android.content.Intent()) }
+        compose.setContent {
+            SettingsPanel(0.5f, 0.8f, true, AxisRotation.NONE, null, false, {}, 30,
+                false, false, false, false, emptyList(), null, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                apps = { open, remove ->
+                    au.com.michaelcarey.artouchpad.ui.PinnedApps(apps, apps.map { it.id }.toSet(), open, remove, {})
+                })
+        }
+        compose.onNodeWithText("Add App").assertIsDisplayed()
+        val lastPin = compose.onNodeWithText("Pin 60")
+        lastPin.assertIsNotDisplayed()
+        lastPin.performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Add App").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun launcherBoundsFollowTheOnScreenKeyboard() {

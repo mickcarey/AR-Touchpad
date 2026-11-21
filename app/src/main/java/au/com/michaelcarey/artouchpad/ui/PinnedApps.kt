@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import au.com.michaelcarey.artouchpad.*
 
@@ -35,21 +36,24 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
     onRequestRemoval: (ShortcutRemoval) -> Unit, onLaunch: (AppShortcut) -> Unit, catalogComplete: Boolean = true) {
     var menuApp by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(16.dp)) {
+        val maxColumns = 8
+        val columnGap = 7.dp
+        val tileWidth = ((maxWidth - columnGap * (maxColumns - 1)) / maxColumns).coerceIn(96.dp, 120.dp)
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val items = apps.orEmpty()
             val colors = MaterialTheme.colorScheme
-            val iconSize = 52.dp
-            FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 10,
-                horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppTile("Add App", Modifier.clickable(role = Role.Button, onClick = onAdd)) {
+            val iconSize = 72.dp
+            FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = maxColumns,
+                horizontalArrangement = Arrangement.spacedBy(columnGap, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                AppTile("Add App", tileWidth, Modifier.clickable(role = Role.Button, onClick = onAdd)) {
                     Box(Modifier.size(iconSize).drawBehind {
                         val stroke = 1.5.dp.toPx()
                         drawCircle(colors.primary.copy(alpha = 0.8f), radius = (size.minDimension - stroke) / 2,
                             style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
-                        val arm = 7.dp.toPx()
+                        val arm = 10.dp.toPx()
                         drawLine(colors.primary, center - Offset(arm, 0f), center + Offset(arm, 0f), stroke)
                         drawLine(colors.primary, center - Offset(0f, arm), center + Offset(0f, arm), stroke)
                     })
@@ -69,7 +73,7 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
                                 }
                             }
                         }
-                        AppTile(app.label, actions.combinedClickable(role = Role.Button,
+                        AppTile(app.label, tileWidth, actions.combinedClickable(role = Role.Button,
                             onLongClickLabel = "Pin options", onLongClick = { menuApp = app.id },
                             onClick = {
                                 try {
@@ -107,8 +111,8 @@ internal fun PinnedApps(apps: List<AppShortcut>?, pinned: Set<String>, onAdd: ()
 }
 
 @Composable
-private fun AppTile(label: String, action: Modifier, icon: @Composable () -> Unit) {
-    Column(Modifier.width(88.dp).then(action).padding(vertical = 6.dp),
+private fun AppTile(label: String, width: Dp, action: Modifier, icon: @Composable () -> Unit) {
+    Column(Modifier.width(width).then(action).padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         icon()
         Text(label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,

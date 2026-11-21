@@ -157,7 +157,7 @@ internal fun SettingsPanel(
                         if (!settings) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                                 .padding(horizontal = LocalLaunchpadGutter.current, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
                                 Box(Modifier.fillMaxWidth().testTag("apps-pane")) {
                                     apps({ pickingApps = true }, { removal = it })
                                 }
