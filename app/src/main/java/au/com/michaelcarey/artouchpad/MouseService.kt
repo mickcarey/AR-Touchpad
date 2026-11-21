@@ -48,6 +48,12 @@ class MouseService(private val context: android.content.Context) : IMouseService
             val flags = if (blocked) type.getField("DISABLE2_NOTIFICATION_SHADE").getInt(null) or
                 type.getField("DISABLE2_QUICK_SETTINGS").getInt(null) else 0
             type.getMethod("disable2", Int::class.javaPrimitiveType).invoke(manager, flags)
+            // Blocking expansion still lets SystemUI draw the clock and icons on a top swipe.
+            val barFlags = if (blocked) type.getField("DISABLE_EXPAND").getInt(null) or
+                type.getField("DISABLE_CLOCK").getInt(null) or
+                type.getField("DISABLE_NOTIFICATION_ICONS").getInt(null) or
+                type.getField("DISABLE_SYSTEM_INFO").getInt(null) else 0
+            type.getMethod("disable", Int::class.javaPrimitiveType).invoke(manager, barFlags)
         }.onFailure { Log.w(TAG, "Could not update the phone notification shade", it) }
         Unit
     }

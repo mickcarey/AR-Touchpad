@@ -225,6 +225,67 @@ class ConnectedInputTest {
         }
     }
 
+    @Test fun topEdgePullsDoNotRevealThePhoneStatusBar() {
+        receiveInput()
+        main.onActivity {
+            vm.closeSettings()
+            vm.updateInputSettings {
+                it.copy(smoothing = Smoothing.OFF, sensitivity = 0.3f, precision = false,
+                    blackTouchpad = false, holdMs = 1200)
+            }
+            vm.setAxisRotation(AxisRotation.NONE)
+            vm.setDimDelay(0)
+        }
+        awaitPhoneFrame()
+        val automation = instrumentation.uiAutomation
+        var statusHeight = 0
+        var width = 0
+        main.onActivity {
+            val decor = it.window.decorView
+            width = decor.width
+            statusHeight = decor.rootWindowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars()).top
+        }
+        assertTrue(statusHeight > 0)
+        fun statusBarPixels(): IntArray {
+            val screen = requireNotNull(automation.takeScreenshot())
+            try {
+                // Sample the clock and system icons, leaving the touch indicator out of the comparison.
+                val band = width / 3
+                return IntArray(2 * band * statusHeight).also { pixels ->
+                    screen.getPixels(pixels, 0, band, 0, 0, band, statusHeight)
+                    screen.getPixels(pixels, band * statusHeight, band, width - band, 0, band, statusHeight)
+                }
+            } finally { screen.recycle() }
+        }
+        automation.waitForIdle(500, 5000)
+        val before = statusBarPixels()
+        repeat(2) { stroke ->
+            val down = SystemClock.uptimeMillis()
+            fun send(action: Int, y: Float) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, width / 2f, y, 0)
+                try {
+                    event.source = InputDevice.SOURCE_TOUCHSCREEN
+                    HiddenApiBypass.invoke(android.view.InputEvent::class.java, event, "setDisplayId", Display.DEFAULT_DISPLAY)
+                    assertTrue(automation.injectInputEvent(event, true))
+                } finally { event.recycle() }
+            }
+            InputProbeActivity.samples.clear()
+            send(MotionEvent.ACTION_DOWN, 1f)
+            try {
+                for (step in 1..8) {
+                    SystemClock.sleep(16)
+                    send(MotionEvent.ACTION_MOVE, 1f + step * 32f)
+                }
+                SystemClock.sleep(250)
+                assertTrue("Status bar appeared during top-edge drag ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            } finally { send(MotionEvent.ACTION_UP, 257f) }
+            assertTrue("Status bar appeared after lifting on stroke ${stroke + 1}", before.contentEquals(statusBarPixels()))
+            await("Top-edge drag ${stroke + 1} did not move the external pointer") {
+                InputProbeActivity.samples.any { it.action == MotionEvent.ACTION_HOVER_MOVE }
+            }
+        }
+    }
+
     private fun fourFingerTap() {
         val properties = Array(4) { index -> MotionEvent.PointerProperties().apply {
             id = index; toolType = MotionEvent.TOOL_TYPE_FINGER
